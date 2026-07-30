@@ -102,3 +102,47 @@ export function formatElapsedTime(milliseconds) {
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
+
+export function productStatusLabel({
+  hasRun = false,
+  hasProduct = false,
+  hasRecipe = false,
+  productApplied = false,
+}) {
+  if (!hasRun) return "先添加参考图";
+  if (!hasProduct) return "添加产品图后自动匹配特征";
+  if (productApplied) return "已匹配到当前视觉配方";
+  return hasRecipe ? "已识别 · 点击匹配到当前配方" : "已识别 · 分析时自动使用";
+}
+
+export function restoreLockedSections(nextRecipe, previousRecipe, lockedSectionIds = []) {
+  const next = structuredClone(nextRecipe);
+  if (!previousRecipe || !lockedSectionIds.length) return next;
+  const lockedIds = new Set(lockedSectionIds);
+  const previousSections = new Map(
+    (previousRecipe.sections ?? []).map((section) => [section.id, section]),
+  );
+
+  next.sections = (next.sections ?? []).map((section) => {
+    if (!lockedIds.has(section.id)) return section;
+    const previous = previousSections.get(section.id);
+    return previous ? cleanLockedSection(previous) : section;
+  });
+
+  for (const [index, section] of (previousRecipe.sections ?? []).entries()) {
+    if (!lockedIds.has(section.id)) continue;
+    if (next.sections.some((candidate) => candidate.id === section.id)) continue;
+    next.sections.splice(Math.min(index, next.sections.length), 0, cleanLockedSection(section));
+  }
+  return next;
+}
+
+function cleanLockedSection(section) {
+  const locked = structuredClone(section);
+  locked.fields = (locked.fields ?? []).map((field) => ({
+    ...field,
+    locked: true,
+    dirty: false,
+  }));
+  return locked;
+}

@@ -1,6 +1,6 @@
 {
   "name": "reverse-prompt-studio",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local interactive workspace for reverse-engineering and editing image prompts with the user's own Codex session.",
   "author": {
     "name": "huahuahuafulaoer",
@@ -13,8 +13,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Reverse Prompt Studio",
-    "shortDescription": "把参考图拆成可编辑、可锁定的视觉提示词结构。",
-    "longDescription": "在本机打开交互式工作台，通过用户自己的 Codex 会话分析参考图、编辑视觉板块，并重新整理为可复制提示词。",
+    "shortDescription": "把参考图与产品图整理成可编辑、可锁定的视觉提示词。",
+    "longDescription": "在本机打开交互式工作台，通过用户自己的 Codex 会话分析参考图、匹配产品特征、编辑视觉板块，并重新整理为可复制提示词。",
     "developerName": "huahuahuafulaoer",
     "category": "Productivity",
     "capabilities": ["Interactive", "Vision", "Local"],

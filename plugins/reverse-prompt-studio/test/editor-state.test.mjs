@@ -79,3 +79,69 @@ test("elapsed analysis time uses a compact clock", () => {
   assert.equal(editorState.formatElapsedTime(0), "00:00");
   assert.equal(editorState.formatElapsedTime(65_000), "01:05");
 });
+
+test("productStatusLabel distinguishes pending and already-applied product truth", () => {
+  assert.equal(typeof editorState.productStatusLabel, "function");
+  assert.equal(
+    editorState.productStatusLabel({ hasRun: false, hasProduct: false }),
+    "先添加参考图",
+  );
+  assert.equal(
+    editorState.productStatusLabel({ hasRun: true, hasProduct: true, hasRecipe: false }),
+    "已识别 · 分析时自动使用",
+  );
+  assert.equal(
+    editorState.productStatusLabel({ hasRun: true, hasProduct: true, hasRecipe: true }),
+    "已识别 · 点击匹配到当前配方",
+  );
+  assert.equal(
+    editorState.productStatusLabel({
+      hasRun: true,
+      hasProduct: true,
+      hasRecipe: true,
+      productApplied: true,
+    }),
+    "已匹配到当前视觉配方",
+  );
+});
+
+test("restoreLockedSections rejects model changes to locally locked values", () => {
+  assert.equal(typeof editorState.restoreLockedSections, "function");
+  const previous = {
+    sections: [
+      {
+        id: "L",
+        label: "光影",
+        fields: [
+          { id: "L01", label: "主光方向", value: "左上", locked: true, dirty: true },
+          { id: "L02", label: "光线质感", value: "柔和", locked: true, dirty: false },
+        ],
+      },
+    ],
+  };
+  const modelResult = {
+    sections: [
+      {
+        id: "L",
+        label: "模型改写的光影",
+        fields: [{ id: "L01", label: "主光方向", value: "右下", locked: false }],
+      },
+    ],
+  };
+
+  const restored = editorState.restoreLockedSections(modelResult, previous, ["L"]);
+
+  assert.equal(restored.sections[0].label, "光影");
+  assert.deepEqual(
+    restored.sections[0].fields.map(({ id, value, locked, dirty }) => ({
+      id,
+      value,
+      locked,
+      dirty,
+    })),
+    [
+      { id: "L01", value: "左上", locked: true, dirty: false },
+      { id: "L02", value: "柔和", locked: true, dirty: false },
+    ],
+  );
+});

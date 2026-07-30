@@ -22,7 +22,7 @@ test("the marketplace points to a self-contained Reverse Prompt Studio plugin", 
   );
 
   assert.equal(manifest.name, "reverse-prompt-studio");
-  assert.equal(manifest.version, "0.2.0");
+  assert.equal(manifest.version, "0.3.0");
   assert.equal(packageMetadata.version, manifest.version);
   assert.equal(manifest.repository, "https://github.com/huahuahuafulaoer/reverse-prompt-studio");
   assert.equal(manifest.skills, "./skills/");

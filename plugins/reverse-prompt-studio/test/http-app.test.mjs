@@ -58,19 +58,39 @@ test("HTTP app uploads an image, analyzes it, and revises the same run", async (
     const upload = await uploadResponse.json();
     assert.ok(upload.runId);
 
+    const productUploadResponse = await fetch(`${origin}/api/runs/${upload.runId}/product`, {
+      method: "POST",
+      headers: { "content-type": "image/webp" },
+      body: Buffer.from("product"),
+    });
+    assert.equal(productUploadResponse.status, 201);
+    const productUpload = await productUploadResponse.json();
+    assert.equal(productUpload.productImageUrl, `/api/runs/${upload.runId}/product`);
+    const productPreview = await fetch(`${origin}${productUpload.productImageUrl}`);
+    assert.equal(productPreview.status, 200);
+    assert.equal(productPreview.headers.get("content-type"), "image/webp");
+    assert.equal(productPreview.headers.get("cache-control"), "no-store");
+
     const analyzed = await fetch(`${origin}/api/analyze`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ runId: upload.runId }),
     }).then((response) => response.json());
-    assert.equal(analyzed.recipe.title, "Fake result");
+    assert.equal(analyzed.recipe.title, "Fake product-aware result");
 
-    analyzed.recipe.sections[0].fields[0].value = "68%";
-    analyzed.recipe.sections[0].fields[0].dirty = true;
-    const revised = await fetch(`${origin}/api/revise`, {
+    const matched = await fetch(`${origin}/api/product-match`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ runId: upload.runId, recipe: analyzed.recipe }),
+    }).then((response) => response.json());
+    assert.equal(matched.recipe.title, "Fake product-matched result");
+
+    matched.recipe.sections[0].fields[0].value = "68%";
+    matched.recipe.sections[0].fields[0].dirty = true;
+    const revised = await fetch(`${origin}/api/revise`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: upload.runId, recipe: matched.recipe }),
     }).then((response) => response.json());
     assert.equal(revised.recipe.title, "Fake revised result");
   } finally {
