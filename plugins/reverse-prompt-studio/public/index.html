@@ -20,6 +20,32 @@
         </div>
       </header>
 
+      <section class="update-banner" id="updateBanner" aria-live="polite" hidden>
+        <div class="update-signal" aria-hidden="true">
+          <span class="update-pulse"></span>
+          <span id="updateVersion">NEW</span>
+        </div>
+        <div class="update-copy">
+          <strong>新版本已发布</strong>
+          <span>升级后新建一个 Codex 任务即可使用。</span>
+        </div>
+        <div class="update-actions">
+          <a id="updateReleaseLink" href="#" target="_blank" rel="noreferrer">查看版本说明</a>
+          <button class="update-copy-button" id="copyUpdateButton" type="button">
+            复制升级命令
+          </button>
+          <button
+            class="update-dismiss"
+            id="dismissUpdateButton"
+            type="button"
+            aria-label="暂时关闭版本提醒"
+            title="暂时关闭"
+          >
+            ×
+          </button>
+        </div>
+      </section>
+
       <main class="workspace">
         <aside class="source-pane">
           <div class="pane-heading">

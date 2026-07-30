@@ -8,6 +8,11 @@ import {
   updateEditorField,
   updateRecipeList,
 } from "/editor-state.js";
+import {
+  UPDATE_DISMISS_KEY,
+  shouldShowUpdate,
+  updateCommandText,
+} from "/update-state.js";
 
 const ANALYSIS_STEPS = ["本地图片", "Codex 接收", "视觉拆解", "生成字段"];
 
@@ -19,10 +24,16 @@ const state = {
   previewUrl: null,
   analysisStartedAt: null,
   analysisTimer: null,
+  update: null,
 };
 
 const elements = {
   connectionStatus: document.querySelector("#connectionStatus"),
+  updateBanner: document.querySelector("#updateBanner"),
+  updateVersion: document.querySelector("#updateVersion"),
+  updateReleaseLink: document.querySelector("#updateReleaseLink"),
+  copyUpdateButton: document.querySelector("#copyUpdateButton"),
+  dismissUpdateButton: document.querySelector("#dismissUpdateButton"),
   imageInput: document.querySelector("#imageInput"),
   dropZone: document.querySelector("#dropZone"),
   dropEmpty: document.querySelector("#dropEmpty"),
@@ -95,6 +106,10 @@ elements.copyPromptButton.addEventListener("click", () =>
 elements.copyJsonButton.addEventListener("click", () =>
   copyText(JSON.stringify(cleanRecipeForCopy(state.recipe), null, 2), "JSON 已复制"),
 );
+elements.copyUpdateButton.addEventListener("click", () =>
+  copyText(updateCommandText(state.update), "升级命令已复制"),
+);
+elements.dismissUpdateButton.addEventListener("click", dismissUpdate);
 
 const eventSource = new EventSource("/api/events");
 eventSource.addEventListener("ready", () => setConnection(true));
@@ -106,6 +121,28 @@ eventSource.addEventListener("codex", (event) => {
 eventSource.onerror = () => setConnection(false);
 
 restoreLocalState();
+checkForUpdates();
+
+async function checkForUpdates() {
+  try {
+    const update = await fetchJson("/api/update");
+    const dismissedVersion = localStorage.getItem(UPDATE_DISMISS_KEY);
+    if (!shouldShowUpdate(update, dismissedVersion)) return;
+    state.update = update;
+    elements.updateVersion.textContent = `v${update.latestVersion}`;
+    elements.updateReleaseLink.href = update.releaseUrl;
+    elements.updateBanner.hidden = false;
+  } catch {
+    // Update availability must never block the local editing workflow.
+  }
+}
+
+function dismissUpdate() {
+  if (state.update?.latestVersion) {
+    localStorage.setItem(UPDATE_DISMISS_KEY, state.update.latestVersion);
+  }
+  elements.updateBanner.hidden = true;
+}
 
 async function acceptImage(file) {
   if (!new Set(["image/png", "image/jpeg", "image/webp"]).has(file.type)) {
