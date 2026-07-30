@@ -63,3 +63,41 @@ test("new releases appear in a compact dismissible update strip", async () => {
   assert.match(updateState, /reverse-prompt-studio-dismissed-update/);
   assert.match(css, /\.update-banner/);
 });
+
+test("the source pane has a compact product-truth input and explicit match action", async () => {
+  const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+  const css = await readFile(path.join(projectDirectory, "public/styles.css"), "utf8");
+
+  assert.match(html, /id="productInput"/);
+  assert.match(html, /id="productPreview"/);
+  assert.match(html, /id="matchProductButton"/);
+  assert.match(html, />\s*匹配产品\s*</);
+  assert.match(script, /async function acceptProductImage\(file\)/);
+  assert.match(script, /async function matchProduct\(\)/);
+  assert.match(script, /\/api\/product-match/);
+  assert.match(css, /\.product-input-card/);
+  assert.match(css, /grid-template-columns:\s*64px\s+minmax\(0, 1fr\)\s+auto/);
+});
+
+test("image replacement switches runs only after upload succeeds", async () => {
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+  const acceptSource = script.slice(
+    script.indexOf("async function acceptImage(file)"),
+    script.indexOf("async function acceptProductImage(file)"),
+  );
+  const uploadIndex = acceptSource.indexOf('fetchJson("/api/upload"');
+  const resetIndex = acceptSource.indexOf("resetRecipeOutput()");
+
+  assert.ok(uploadIndex >= 0);
+  assert.ok(resetIndex > uploadIndex, "old run state must reset only after upload succeeds");
+  assert.match(acceptSource, /previousSourceState/);
+  assert.match(acceptSource, /restoreSourcePreview/);
+
+  const acceptProduct = script.slice(
+    script.indexOf("async function acceptProductImage(file)"),
+    script.indexOf("async function analyzeImage()"),
+  );
+  assert.match(acceptProduct, /previousProductState/);
+  assert.doesNotMatch(acceptProduct, /catch \(error\) \{\s*resetProductState\(\)/);
+});

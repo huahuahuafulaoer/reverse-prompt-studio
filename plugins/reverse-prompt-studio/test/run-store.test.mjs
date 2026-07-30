@@ -36,3 +36,28 @@ test("RunStore saves source images and recipe revisions inside a run directory",
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("RunStore saves a role-specific product image beside the reference image", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "reverse-prompt-product-store-"));
+  const store = new RunStore(root);
+
+  try {
+    const run = await store.createRun({
+      bytes: Buffer.from("reference"),
+      contentType: "image/png",
+    });
+    const product = await store.saveProductImage(run.id, {
+      bytes: Buffer.from("product"),
+      contentType: "image/webp",
+    });
+
+    assert.equal(path.basename(product.productImagePath), "product.webp");
+    assert.equal((await readFile(await store.getProductImagePath(run.id))).toString(), "product");
+    const loaded = JSON.parse(
+      await readFile(path.join(root, run.id, "run.json"), "utf8"),
+    );
+    assert.equal(loaded.productImagePath, product.productImagePath);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

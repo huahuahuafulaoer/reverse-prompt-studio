@@ -4,6 +4,8 @@ import {
   isSectionLocked,
   normalizeSectionLocks,
   progressForCodexEvent,
+  productStatusLabel,
+  restoreLockedSections,
   setSectionLocked,
   updateEditorField,
   updateRecipeList,
@@ -22,6 +24,9 @@ const state = {
   compiledPrompt: "",
   busy: false,
   previewUrl: null,
+  productPreviewUrl: null,
+  hasProduct: false,
+  productApplied: false,
   analysisStartedAt: null,
   analysisTimer: null,
   update: null,
@@ -39,6 +44,12 @@ const elements = {
   dropEmpty: document.querySelector("#dropEmpty"),
   sourcePreview: document.querySelector("#sourcePreview"),
   replaceHint: document.querySelector("#replaceHint"),
+  productInputCard: document.querySelector("#productInputCard"),
+  productInput: document.querySelector("#productInput"),
+  productPlaceholder: document.querySelector("#productPlaceholder"),
+  productPreview: document.querySelector("#productPreview"),
+  productStatus: document.querySelector("#productStatus"),
+  matchProductButton: document.querySelector("#matchProductButton"),
   analyzeButton: document.querySelector("#analyzeButton"),
   clearButton: document.querySelector("#clearButton"),
   analysisExperience: document.querySelector("#analysisExperience"),
@@ -63,6 +74,11 @@ const elements = {
 elements.imageInput.addEventListener("change", () => {
   const [file] = elements.imageInput.files;
   if (file) acceptImage(file);
+});
+
+elements.productInput.addEventListener("change", () => {
+  const [file] = elements.productInput.files;
+  if (file) acceptProductImage(file);
 });
 
 for (const eventName of ["dragenter", "dragover"]) {
@@ -98,6 +114,7 @@ window.addEventListener("paste", (event) => {
 });
 
 elements.analyzeButton.addEventListener("click", analyzeImage);
+elements.matchProductButton.addEventListener("click", matchProduct);
 elements.reviseButton.addEventListener("click", reviseRecipe);
 elements.clearButton.addEventListener("click", clearRun);
 elements.copyPromptButton.addEventListener("click", () =>
@@ -150,9 +167,15 @@ async function acceptImage(file) {
   }
   if (file.size > 20 * 1024 * 1024) return showToast("图片不能超过 20MB");
 
-  if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
-  state.previewUrl = URL.createObjectURL(file);
-  elements.sourcePreview.src = state.previewUrl;
+  const previousSourceState = {
+    previewUrl: state.previewUrl,
+    src: elements.sourcePreview.getAttribute("src"),
+    previewHidden: elements.sourcePreview.hidden,
+    dropEmptyHidden: elements.dropEmpty.hidden,
+    replaceHintHidden: elements.replaceHint.hidden,
+  };
+  const candidatePreviewUrl = URL.createObjectURL(file);
+  elements.sourcePreview.src = candidatePreviewUrl;
   elements.sourcePreview.hidden = false;
   elements.dropEmpty.hidden = true;
   elements.replaceHint.hidden = false;
@@ -172,6 +195,12 @@ async function acceptImage(file) {
       body: file,
     });
     state.runId = response.runId;
+    resetRecipeOutput();
+    resetProductState();
+    if (previousSourceState.previewUrl) URL.revokeObjectURL(previousSourceState.previewUrl);
+    state.previewUrl = candidatePreviewUrl;
+    elements.productInput.disabled = false;
+    refreshProductStatus();
     elements.analyzeButton.disabled = false;
     elements.clearButton.disabled = false;
     setAnalysisExperience({
@@ -181,7 +210,10 @@ async function acceptImage(file) {
       elapsed: "READY",
       complete: true,
     });
+    persistLocalState();
   } catch (error) {
+    URL.revokeObjectURL(candidatePreviewUrl);
+    restoreSourcePreview(previousSourceState);
     showToast(error.message);
     setAnalysisExperience({
       phase: 0,
@@ -193,6 +225,95 @@ async function acceptImage(file) {
   } finally {
     setBusy(false);
   }
+}
+
+async function acceptProductImage(file) {
+  if (!state.runId) return showToast("请先添加参考图");
+  if (!new Set(["image/png", "image/jpeg", "image/webp"]).has(file.type)) {
+    return showToast("请选择 PNG、JPG 或 WEBP 图片");
+  }
+  if (file.size > 20 * 1024 * 1024) return showToast("图片不能超过 20MB");
+
+  const previousProductState = {
+    previewUrl: state.productPreviewUrl,
+    src: elements.productPreview.getAttribute("src"),
+    previewHidden: elements.productPreview.hidden,
+    placeholderHidden: elements.productPlaceholder.hidden,
+    hasProduct: state.hasProduct,
+    productApplied: state.productApplied,
+    hasProductClass: elements.productInputCard.classList.contains("has-product"),
+  };
+  const candidatePreviewUrl = URL.createObjectURL(file);
+  elements.productPreview.src = candidatePreviewUrl;
+  elements.productPreview.hidden = false;
+  elements.productPlaceholder.hidden = true;
+  elements.productStatus.textContent = "正在保存产品图";
+  setBusy(true, "正在保存产品图");
+
+  try {
+    await fetchJson(`/api/runs/${state.runId}/product`, {
+      method: "POST",
+      headers: { "content-type": file.type },
+      body: file,
+    });
+    if (previousProductState.previewUrl) {
+      URL.revokeObjectURL(previousProductState.previewUrl);
+    }
+    state.productPreviewUrl = candidatePreviewUrl;
+    state.hasProduct = true;
+    state.productApplied = false;
+    elements.productInputCard.classList.add("has-product");
+    refreshProductStatus();
+    setAnalysisExperience({
+      phase: state.recipe ? 3 : 0,
+      label: state.recipe ? "产品图已就绪" : "双图已就绪",
+      detail: state.recipe
+        ? "点击匹配产品，只更新产品与必要的物理关系"
+        : "点击开始分析，Codex 会分别读取视觉参考与产品真值",
+      elapsed: "READY",
+      complete: true,
+    });
+    persistLocalState();
+    showToast(state.recipe ? "产品图已就绪，点击匹配产品" : "产品图会随参考图一起分析");
+  } catch (error) {
+    URL.revokeObjectURL(candidatePreviewUrl);
+    restoreProductPreview(previousProductState);
+    showToast(error.message);
+    setAnalysisExperience({
+      phase: 0,
+      label: "产品图保存失败",
+      detail: error.message,
+      elapsed: "ERROR",
+      error: true,
+    });
+  } finally {
+    setBusy(false);
+  }
+}
+
+function restoreSourcePreview(previousSourceState) {
+  state.previewUrl = previousSourceState.previewUrl;
+  if (previousSourceState.src === null) elements.sourcePreview.removeAttribute("src");
+  else elements.sourcePreview.setAttribute("src", previousSourceState.src);
+  elements.sourcePreview.hidden = previousSourceState.previewHidden;
+  elements.dropEmpty.hidden = previousSourceState.dropEmptyHidden;
+  elements.replaceHint.hidden = previousSourceState.replaceHintHidden;
+}
+
+function restoreProductPreview(previousProductState) {
+  state.productPreviewUrl = previousProductState.previewUrl;
+  state.hasProduct = previousProductState.hasProduct;
+  state.productApplied = previousProductState.productApplied;
+  if (previousProductState.src === null) elements.productPreview.removeAttribute("src");
+  else elements.productPreview.setAttribute("src", previousProductState.src);
+  elements.productPreview.hidden = previousProductState.previewHidden;
+  elements.productPlaceholder.hidden = previousProductState.placeholderHidden;
+  elements.productInputCard.classList.toggle(
+    "has-product",
+    previousProductState.hasProductClass,
+  );
+  refreshProductStatus();
+  syncProductControls();
 }
 
 async function analyzeImage() {
@@ -209,6 +330,9 @@ async function analyzeImage() {
       body: JSON.stringify({ runId: state.runId }),
     });
     applyResult(result);
+    if (state.hasProduct) state.productApplied = true;
+    refreshProductStatus();
+    persistLocalState();
     finishAnalysisExperience({
       label: "分析完成",
       detail: "视觉关系已经转换为可编辑字段",
@@ -255,11 +379,42 @@ async function reviseRecipe() {
   }
 }
 
+async function matchProduct() {
+  if (!state.runId || !state.recipe || !state.hasProduct || state.busy) return;
+  const lockedSectionIds = state.recipe.sections
+    .filter((section) => section.id !== "P" && isSectionLocked(section))
+    .map((section) => section.id);
+  setBusy(true, "Codex 正在匹配产品");
+  startAnalysisExperience({
+    label: "正在读取产品特征",
+    detail: "只替换产品真值，并检查必要的比例与接触关系",
+  });
+  try {
+    const result = await fetchJson("/api/product-match", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: state.runId, recipe: state.recipe }),
+    });
+    applyResult(result, lockedSectionIds);
+    state.productApplied = true;
+    refreshProductStatus();
+    persistLocalState();
+    showToast("产品特征已匹配");
+    finishAnalysisExperience({
+      label: "产品匹配完成",
+      detail: "产品字段与必要的物理关系已经更新",
+    });
+  } catch (error) {
+    showToast(error.message);
+    failAnalysisExperience(error.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
 function applyResult(result, lockedSectionIds = []) {
   let nextRecipe = normalizeSectionLocks(result.recipe);
-  for (const sectionId of lockedSectionIds) {
-    nextRecipe = setSectionLocked(nextRecipe, sectionId, true);
-  }
+  nextRecipe = restoreLockedSections(nextRecipe, state.recipe, lockedSectionIds);
   state.recipe = nextRecipe;
   state.compiledPrompt = result.compiledPrompt;
   elements.compiledPrompt.value = state.compiledPrompt;
@@ -296,6 +451,7 @@ function renderRecipe() {
 
   renderBoundaries();
   updateChangeCount();
+  syncProductControls();
 }
 
 function createFieldRow(field) {
@@ -499,6 +655,7 @@ function setBusy(busy, label) {
   elements.clearButton.disabled = busy || !state.runId;
   if (label) elements.activityState.textContent = label;
   syncBusyControls(busy);
+  syncProductControls();
   updateChangeCount();
 }
 
@@ -510,6 +667,22 @@ function syncBusyControls(busy) {
   for (const lock of document.querySelectorAll(".section-lock-button")) {
     lock.disabled = busy;
   }
+}
+
+function syncProductControls() {
+  elements.productInput.disabled = state.busy || !state.runId;
+  elements.productInputCard.classList.toggle("is-busy", state.busy);
+  elements.matchProductButton.disabled =
+    state.busy || !state.runId || !state.recipe || !state.hasProduct;
+}
+
+function refreshProductStatus() {
+  elements.productStatus.textContent = productStatusLabel({
+    hasRun: Boolean(state.runId),
+    hasProduct: state.hasProduct,
+    hasRecipe: Boolean(state.recipe),
+    productApplied: state.productApplied,
+  });
 }
 
 function setConnection(online) {
@@ -526,6 +699,7 @@ function clearRun() {
   state.compiledPrompt = "";
   if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
   state.previewUrl = null;
+  resetProductState();
   elements.imageInput.value = "";
   elements.sourcePreview.removeAttribute("src");
   elements.sourcePreview.hidden = true;
@@ -539,6 +713,30 @@ function clearRun() {
   elements.dropZone.classList.remove("is-analyzing");
   elements.analyzeButton.disabled = true;
   elements.clearButton.disabled = true;
+  localStorage.removeItem("reverse-prompt-studio-state");
+}
+
+function resetProductState() {
+  state.hasProduct = false;
+  state.productApplied = false;
+  if (state.productPreviewUrl) URL.revokeObjectURL(state.productPreviewUrl);
+  state.productPreviewUrl = null;
+  elements.productInput.value = "";
+  elements.productPreview.removeAttribute("src");
+  elements.productPreview.hidden = true;
+  elements.productPlaceholder.hidden = false;
+  elements.productInputCard.classList.remove("has-product");
+  refreshProductStatus();
+  syncProductControls();
+}
+
+function resetRecipeOutput() {
+  state.recipe = null;
+  state.compiledPrompt = "";
+  elements.compiledPrompt.value = "";
+  elements.recipeEmpty.hidden = false;
+  elements.recipeEditor.hidden = true;
+  elements.exportDock.hidden = true;
   localStorage.removeItem("reverse-prompt-studio-state");
 }
 
@@ -590,13 +788,15 @@ function cleanRecipeForCopy(recipe) {
 }
 
 function persistLocalState() {
-  if (!state.recipe) return;
+  if (!state.runId) return;
   localStorage.setItem(
     "reverse-prompt-studio-state",
     JSON.stringify({
       runId: state.runId,
       recipe: state.recipe,
       compiledPrompt: state.compiledPrompt,
+      hasProduct: state.hasProduct,
+      productApplied: state.productApplied,
     }),
   );
 }
@@ -604,18 +804,30 @@ function persistLocalState() {
 function restoreLocalState() {
   try {
     const saved = JSON.parse(localStorage.getItem("reverse-prompt-studio-state"));
-    if (!saved?.recipe) return;
+    if (!saved?.runId) return;
     state.runId = saved.runId;
-    state.recipe = normalizeSectionLocks(saved.recipe);
+    state.recipe = saved.recipe ? normalizeSectionLocks(saved.recipe) : null;
     state.compiledPrompt = saved.compiledPrompt ?? "";
+    state.hasProduct = Boolean(saved.hasProduct);
+    state.productApplied = Boolean(saved.productApplied);
     elements.compiledPrompt.value = state.compiledPrompt;
     elements.sourcePreview.src = `/api/runs/${state.runId}/image`;
     elements.sourcePreview.hidden = false;
     elements.dropEmpty.hidden = true;
     elements.replaceHint.hidden = false;
+    elements.productInput.disabled = false;
+    refreshProductStatus();
+    if (state.hasProduct) {
+      elements.productPreview.src = `/api/runs/${state.runId}/product`;
+      elements.productPreview.hidden = false;
+      elements.productPlaceholder.hidden = true;
+      elements.productInputCard.classList.add("has-product");
+      refreshProductStatus();
+    }
     elements.analyzeButton.disabled = false;
     elements.clearButton.disabled = false;
-    renderRecipe();
+    if (state.recipe) renderRecipe();
+    syncProductControls();
   } catch {
     localStorage.removeItem("reverse-prompt-studio-state");
   }

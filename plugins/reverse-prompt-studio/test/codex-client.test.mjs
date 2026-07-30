@@ -9,6 +9,7 @@ import {
   CodexThread,
   JsonRpcConnection,
   createAnalyzeTurnParams,
+  createProductMatchTurnParams,
   editorRecipeSchema,
   parseStructuredMessage,
 } from "../src/codex-client.mjs";
@@ -66,6 +67,70 @@ test("createAnalyzeTurnParams attaches the local image and reverse prompt skill"
   });
   assert.equal(params.outputSchema.properties.schema.const, "reverse-image-prompt/editor-v1");
   assert.equal(editorRecipeSchema.additionalProperties, false);
+});
+
+test("createAnalyzeTurnParams labels reference and product images with separate truth roles", () => {
+  const params = createAnalyzeTurnParams({
+    threadId: "thr_1",
+    imagePath: "/tmp/reference.png",
+    productImagePath: "/tmp/product.webp",
+    skillPath: "/tmp/skill/SKILL.md",
+  });
+
+  assert.match(params.input[0].text, /构图、光影、色彩、环境和可迁移风格/);
+  assert.match(params.input[0].text, /inspiration_only/);
+  assert.deepEqual(params.input[2], {
+    type: "localImage",
+    path: "/tmp/reference.png",
+    detail: "original",
+  });
+  assert.match(params.input[3].text, /产品图.*product_truth/s);
+  assert.match(params.input[0].text, /初次分析.*locked=false/);
+  assert.deepEqual(params.input[4], {
+    type: "localImage",
+    path: "/tmp/product.webp",
+    detail: "original",
+  });
+});
+
+test("createProductMatchTurnParams replaces product truth while preserving locks and stable ids", () => {
+  const params = createProductMatchTurnParams({
+    threadId: "thr_1",
+    productImagePath: "/tmp/product.png",
+    skillPath: "/tmp/skill/SKILL.md",
+    currentRecipe: {
+      schema: "reverse-image-prompt/editor-v1",
+      title: "Demo",
+      sections: [
+        {
+          id: "L",
+          label: "光影",
+          fields: [{ id: "L01", label: "主光", value: "左上", locked: true }],
+        },
+        {
+          id: "P",
+          label: "产品",
+          fields: [{ id: "P01", label: "产品", value: "旧产品", locked: true }],
+        },
+      ],
+      referenceTransfer: { preserve: [], translate: [], omit: [] },
+      truthGaps: [],
+      negativeConstraints: [],
+    },
+  });
+
+  assert.match(params.input[0].text, /product_truth/);
+  assert.match(params.input[0].text, /产品相关的 P 字段/);
+  assert.match(params.input[0].text, /字段 ID.*保持稳定/);
+  assert.match(params.input[0].text, /locked_field_ids/);
+  assert.match(params.input[0].text, /"locked_field_ids":\["L01"\]/);
+  assert.match(params.input[0].text, /明确授权.*产品板块的锁/);
+  assert.match(params.input[0].text, /不得推断.*工程功能/);
+  assert.deepEqual(params.input.at(-1), {
+    type: "localImage",
+    path: "/tmp/product.png",
+    detail: "original",
+  });
 });
 
 test("editorRecipeSchema declares a type for const and enum properties", () => {

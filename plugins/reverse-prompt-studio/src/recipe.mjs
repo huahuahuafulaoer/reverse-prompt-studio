@@ -85,3 +85,70 @@ export function compilePortablePrompt(recipe) {
   }
   return lines.join("\n");
 }
+
+export function restoreLockedRecipeSections(
+  nextRecipe,
+  currentRecipe,
+  { authorizedSectionIds = [] } = {},
+) {
+  const next = clone(nextRecipe);
+  if (!currentRecipe) return next;
+  const authorized = new Set(authorizedSectionIds);
+  const lockedSections = new Map(
+    (currentRecipe.sections ?? [])
+      .filter(
+        (section) =>
+          !authorized.has(section.id) &&
+          section.fields?.length &&
+          section.fields.every((field) => field.locked),
+      )
+      .map((section) => [section.id, section]),
+  );
+
+  next.sections = (next.sections ?? []).map((section) => {
+    const locked = lockedSections.get(section.id);
+    return locked ? cleanLockedSection(locked) : section;
+  });
+
+  for (const [index, section] of (currentRecipe.sections ?? []).entries()) {
+    if (!lockedSections.has(section.id)) continue;
+    if (next.sections.some((candidate) => candidate.id === section.id)) continue;
+    next.sections.splice(Math.min(index, next.sections.length), 0, cleanLockedSection(section));
+  }
+  return next;
+}
+
+export function validateProductRecipe(recipe, { previousRecipe } = {}) {
+  const productSection = (recipe.sections ?? []).find((section) => section.id === "P");
+  const productFields = productSection?.fields ?? [];
+  if (!productFields.length || !productFields.some((field) => String(field.value ?? "").trim())) {
+    throw new Error("Codex 没有返回产品字段，请重试产品分析");
+  }
+
+  if (previousRecipe) {
+    const nextSections = new Map(
+      (recipe.sections ?? []).map((section) => [section.id, section]),
+    );
+    for (const previousSection of previousRecipe.sections ?? []) {
+      const nextSection = nextSections.get(previousSection.id);
+      if (!nextSection) throw new Error(`Codex 返回缺少原有板块 ${previousSection.id}`);
+      const nextFieldIds = new Set((nextSection.fields ?? []).map((field) => field.id));
+      for (const field of previousSection.fields ?? []) {
+        if (!nextFieldIds.has(field.id)) {
+          throw new Error(`Codex 返回缺少原有字段 ${field.id}`);
+        }
+      }
+    }
+  }
+  return recipe;
+}
+
+function cleanLockedSection(section) {
+  const locked = clone(section);
+  locked.fields = (locked.fields ?? []).map((field) => ({
+    ...field,
+    locked: true,
+    dirty: false,
+  }));
+  return locked;
+}

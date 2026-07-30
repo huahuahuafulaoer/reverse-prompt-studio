@@ -62,6 +62,19 @@ export function createStudioHttpServer({ service, store, publicDirectory, update
         });
       }
 
+      const productMatch = url.pathname.match(/^\/api\/runs\/([0-9a-f-]{36})\/product$/i);
+      if (request.method === "POST" && productMatch) {
+        const bytes = await readBody(request);
+        await store.saveProductImage(productMatch[1], {
+          bytes,
+          contentType: request.headers["content-type"],
+        });
+        return sendJson(response, 201, {
+          runId: productMatch[1],
+          productImageUrl: `/api/runs/${productMatch[1]}/product`,
+        });
+      }
+
       const imageMatch = url.pathname.match(/^\/api\/runs\/([0-9a-f-]{36})\/image$/i);
       if (request.method === "GET" && imageMatch) {
         const imagePath = await store.getImagePath(imageMatch[1]);
@@ -69,6 +82,17 @@ export function createStudioHttpServer({ service, store, publicDirectory, update
         response.writeHead(200, {
           "content-type": CONTENT_TYPES.get(path.extname(imagePath).toLowerCase()) ?? "application/octet-stream",
           "cache-control": "private, max-age=3600",
+        });
+        return response.end(bytes);
+      }
+
+      if (request.method === "GET" && productMatch) {
+        const imagePath = await store.getProductImagePath(productMatch[1]);
+        if (!imagePath) return sendJson(response, 404, { error: "Product image not found" });
+        const bytes = await readFile(imagePath);
+        response.writeHead(200, {
+          "content-type": CONTENT_TYPES.get(path.extname(imagePath).toLowerCase()) ?? "application/octet-stream",
+          "cache-control": "no-store",
         });
         return response.end(bytes);
       }
@@ -81,6 +105,10 @@ export function createStudioHttpServer({ service, store, publicDirectory, update
       if (request.method === "POST" && url.pathname === "/api/revise") {
         const { runId, recipe } = await readJson(request);
         return sendJson(response, 200, await service.revise(runId, recipe));
+      }
+      if (request.method === "POST" && url.pathname === "/api/product-match") {
+        const { runId, recipe } = await readJson(request);
+        return sendJson(response, 200, await service.matchProduct(runId, recipe));
       }
 
       if (request.method === "GET") {

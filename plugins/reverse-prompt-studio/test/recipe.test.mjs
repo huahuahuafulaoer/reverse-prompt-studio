@@ -6,6 +6,8 @@ import {
   buildRevisionPrompt,
   compilePortablePrompt,
   normalizeRecipe,
+  restoreLockedRecipeSections,
+  validateProductRecipe,
 } from "../src/recipe.mjs";
 
 const sampleRecipe = {
@@ -83,4 +85,80 @@ test("compilePortablePrompt renders one copyable prompt from structured fields",
   assert.match(prompt, /保留：低调光影/);
   assert.match(prompt, /避免：不要生成水印/);
   assert.doesNotMatch(prompt, /confidence/);
+});
+
+test("restoreLockedRecipeSections hard-preserves non-product locks before persistence", () => {
+  const current = normalizeRecipe({
+    ...sampleRecipe,
+    sections: [
+      {
+        id: "L",
+        label: "光影",
+        fields: [
+          { id: "L01", label: "主光方向", value: "左上方", confidence: "high", locked: true },
+        ],
+      },
+      {
+        id: "P",
+        label: "产品",
+        fields: [
+          { id: "P01", label: "产品", value: "旧产品", confidence: "high", locked: true },
+        ],
+      },
+    ],
+  });
+  const modelResult = normalizeRecipe({
+    ...sampleRecipe,
+    sections: [
+      {
+        id: "L",
+        label: "被改写的光影",
+        fields: [
+          { id: "L01", label: "主光方向", value: "右下方", confidence: "low", locked: false },
+        ],
+      },
+      {
+        id: "P",
+        label: "产品",
+        fields: [
+          { id: "P01", label: "产品", value: "新产品", confidence: "high", locked: false },
+        ],
+      },
+    ],
+  });
+
+  const restored = restoreLockedRecipeSections(modelResult, current, {
+    authorizedSectionIds: ["P"],
+  });
+
+  assert.equal(restored.sections.find((section) => section.id === "L").fields[0].value, "左上方");
+  assert.equal(restored.sections.find((section) => section.id === "P").fields[0].value, "新产品");
+});
+
+test("validateProductRecipe requires product fields and stable existing ids", () => {
+  const current = normalizeRecipe(sampleRecipe);
+  assert.throws(
+    () => validateProductRecipe(current),
+    /没有返回产品字段/,
+  );
+
+  const withProduct = normalizeRecipe({
+    ...sampleRecipe,
+    sections: [
+      ...sampleRecipe.sections,
+      {
+        id: "P",
+        label: "产品",
+        fields: [{ id: "P01", label: "产品", value: "新产品", confidence: "high" }],
+      },
+    ],
+  });
+  assert.equal(validateProductRecipe(withProduct), withProduct);
+
+  const missingExistingField = structuredClone(withProduct);
+  missingExistingField.sections.find((section) => section.id === "C").fields.shift();
+  assert.throws(
+    () => validateProductRecipe(missingExistingField, { previousRecipe: current }),
+    /缺少原有字段 C02/,
+  );
 });

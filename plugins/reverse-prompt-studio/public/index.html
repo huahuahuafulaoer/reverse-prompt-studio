@@ -64,6 +64,26 @@
             <span class="replace-hint" id="replaceHint" hidden>点击更换图片</span>
           </label>
 
+          <div class="product-input-card" id="productInputCard">
+            <label class="product-thumb" for="productInput" title="添加或更换产品图">
+              <input
+                id="productInput"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                disabled
+              />
+              <span class="product-placeholder" id="productPlaceholder" aria-hidden="true">+</span>
+              <img id="productPreview" alt="用于匹配特征的产品图" hidden />
+            </label>
+            <label class="product-copy" for="productInput">
+              <strong>产品图</strong>
+              <span id="productStatus">先添加参考图</span>
+            </label>
+            <button class="product-match-button" id="matchProductButton" type="button" disabled>
+              匹配产品
+            </button>
+          </div>
+
           <div class="source-actions">
             <button class="button button-primary" id="analyzeButton" type="button" disabled>
               开始分析

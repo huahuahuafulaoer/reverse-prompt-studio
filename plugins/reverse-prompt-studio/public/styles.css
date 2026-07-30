@@ -361,6 +361,106 @@ label:focus-within {
   font-size: 10px;
 }
 
+.product-input-card {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin: 0 0 14px;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fbfcfa;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.product-input-card:focus-within,
+.product-input-card.has-product {
+  border-color: #bdc9a7;
+  background: #fcfff5;
+}
+
+.product-thumb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 12px;
+  color: var(--ink-soft);
+  background: var(--surface-soft);
+  cursor: pointer;
+}
+
+.product-thumb input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.product-thumb:has(input:disabled),
+.product-input-card.is-busy .product-copy {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.product-placeholder {
+  font-size: 24px;
+  font-weight: 300;
+}
+
+.product-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #eef0ea;
+}
+
+.product-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.product-copy strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.product-copy span {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-match-button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 680;
+  white-space: nowrap;
+}
+
+.product-match-button:hover:not(:disabled) {
+  border-color: var(--ink);
+  transform: translateY(-1px);
+}
+
+.product-match-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
 .source-actions,
 .copy-actions {
   display: flex;
@@ -980,6 +1080,15 @@ label:focus-within {
 
   .pane-heading h1 {
     font-size: 34px;
+  }
+
+  .product-input-card {
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+  }
+
+  .product-thumb {
+    width: 56px;
+    height: 56px;
   }
 
   .analysis-experience {

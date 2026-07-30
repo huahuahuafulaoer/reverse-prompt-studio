@@ -30,7 +30,7 @@ export class CodexAppServer extends EventEmitter {
       clientInfo: {
         name: "reverse_prompt_studio",
         title: "Reverse Prompt Studio",
-        version: "0.1.0",
+        version: "0.3.0",
       },
     });
     connection.notify("initialized", {});
@@ -126,18 +126,95 @@ export const editorRecipeSchema = {
   },
 };
 
-export function createAnalyzeTurnParams({ threadId, imagePath, skillPath }) {
+export function createAnalyzeTurnParams({
+  threadId,
+  imagePath,
+  productImagePath,
+  skillPath,
+}) {
+  const input = [
+    {
+      type: "text",
+      text: [
+        "$reverse-engineering-image-prompts 分析这张参考图。",
+        "下面第一张图片的唯一主角色是 inspiration_only；允许提取的线索维度仅限构图、光影、色彩、环境和可迁移风格关系。",
+        "直接检查图片，只根据可见证据推导可迁移视觉配方。",
+        productImagePath
+          ? "另有一张明确标注的产品图；它只负责产品真值，不得接管参考图的构图、场景或风格。"
+          : "产品结构或身份没有可靠真值时，必须写入 truthGaps，不要凭外观补全。",
+        "把结果写入唯一的 reverse-image-prompt/editor-v1 结构化状态。",
+        "初次分析的所有字段都设为 locked=false；锁定只由用户之后在界面中操作。",
+        "字段 ID 在后续修改中必须保持稳定。不要输出额外 prose prompt。",
+      ].join("\n"),
+      text_elements: [],
+    },
+    {
+      type: "skill",
+      name: "reverse-engineering-image-prompts",
+      path: skillPath,
+    },
+    { type: "localImage", path: imagePath, detail: "original" },
+  ];
+
+  if (productImagePath) {
+    input.push(
+      {
+        type: "text",
+        text: [
+          "下面第二张是产品图，唯一主角色为 product_truth。",
+          "它只可控制可见的产品轮廓、比例、朝向、色块、表面反应、部件和细节。",
+          "不得从外观推断品牌、精确材质规格、工程功能或性能宣称；无法确认的内容写入 truthGaps。",
+          "把产品真值转译到参考图的视觉关系中，并保持参考图的构图、场景和风格职责不变。",
+        ].join("\n"),
+        text_elements: [],
+      },
+      { type: "localImage", path: productImagePath, detail: "original" },
+    );
+  }
+
+  return {
+    threadId,
+    input,
+    outputSchema: editorRecipeSchema,
+  };
+}
+
+export function createProductMatchTurnParams({
+  threadId,
+  productImagePath,
+  skillPath,
+  currentRecipe,
+}) {
+  const currentRecipeForMatch = structuredClone(currentRecipe);
+  const productSection = currentRecipeForMatch.sections.find((section) => section.id === "P");
+  for (const field of productSection?.fields ?? []) field.locked = false;
+  const lockedFieldIds = currentRecipeForMatch.sections
+    .filter((section) => section.id !== "P")
+    .flatMap((section) => section.fields)
+    .filter((field) => field.locked)
+    .map((field) => field.id);
+
   return {
     threadId,
     input: [
       {
         type: "text",
         text: [
-          "$reverse-engineering-image-prompts 分析这张参考图。",
-          "直接检查图片，只根据可见证据推导可迁移视觉配方。",
-          "把结果写入唯一的 reverse-image-prompt/editor-v1 结构化状态。",
-          "字段 ID 在后续修改中必须保持稳定。不要输出额外 prose prompt。",
-        ].join("\n"),
+          "使用 $reverse-engineering-image-prompts 将下面的产品图匹配到当前视觉配方。",
+          "这张图片的唯一主角色是 product_truth；它不拥有构图、环境、叙事、色调或风格。",
+          "优先更新产品相关的 P 字段：可见轮廓、比例、朝向、色块、表面反应、部件与细节。",
+          "点击匹配产品已经构成对产品板块的明确授权，因此产品板块的锁不进入 locked_field_ids；其他板块的锁仍须严格保留。",
+          "只有为物理合理性所必需时，才最小幅联动 S/A/C/L/R 中的比例、抓握、接触、遮挡、阴影和材质受光。",
+          "其余字段默认保持不变；严格保留 locked_field_ids。若锁定字段与必要联动冲突，不得静默覆盖，把冲突写入 truthGaps。",
+          "所有未受影响的字段 ID 必须保持稳定；不要重编号。",
+          "不得推断品牌、工程功能、性能宣称或精确材质规格；不可见或无法确认的内容写入 truthGaps。",
+          "返回完整且唯一的 reverse-image-prompt/editor-v1 结构化状态，不要附加 prose prompt。",
+          JSON.stringify({
+            source_role: "product_truth",
+            locked_field_ids: lockedFieldIds,
+            current_recipe: currentRecipeForMatch,
+          }),
+        ].join("\n\n"),
         text_elements: [],
       },
       {
@@ -145,7 +222,7 @@ export function createAnalyzeTurnParams({ threadId, imagePath, skillPath }) {
         name: "reverse-engineering-image-prompts",
         path: skillPath,
       },
-      { type: "localImage", path: imagePath, detail: "original" },
+      { type: "localImage", path: productImagePath, detail: "original" },
     ],
     outputSchema: editorRecipeSchema,
   };

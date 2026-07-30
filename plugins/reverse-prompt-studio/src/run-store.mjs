@@ -50,6 +50,19 @@ export class RunStore {
     await writeFile(revisionsPath, JSON.stringify(revisions, null, 2));
   }
 
+  async saveProductImage(id, { bytes, contentType }) {
+    const runDirectory = this.#runDirectory(id);
+    const runPath = path.join(runDirectory, "run.json");
+    const run = JSON.parse(await readFile(runPath, "utf8"));
+    const productImagePath = path.join(
+      runDirectory,
+      `product${imageExtensionFor(contentType)}`,
+    );
+    await writeFile(productImagePath, bytes);
+    await writeFile(runPath, JSON.stringify({ ...run, productImagePath }, null, 2));
+    return { id, productImagePath };
+  }
+
   async saveThreadId(id, threadId) {
     const runDirectory = this.#runDirectory(id);
     const runPath = path.join(runDirectory, "run.json");
@@ -79,6 +92,17 @@ export class RunStore {
     const resolvedImage = path.resolve(run.imagePath);
     if (!resolvedImage.startsWith(`${runDirectory}${path.sep}`)) {
       throw new Error("Stored image path escapes its run directory");
+    }
+    return resolvedImage;
+  }
+
+  async getProductImagePath(id) {
+    const runDirectory = this.#runDirectory(id);
+    const run = JSON.parse(await readFile(path.join(runDirectory, "run.json"), "utf8"));
+    if (!run.productImagePath) return null;
+    const resolvedImage = path.resolve(run.productImagePath);
+    if (!resolvedImage.startsWith(`${runDirectory}${path.sep}`)) {
+      throw new Error("Stored product image path escapes its run directory");
     }
     return resolvedImage;
   }
