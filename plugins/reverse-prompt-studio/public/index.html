@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>视觉反推工坊</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="studio-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="视觉反推工坊首页">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <strong>Prompt Studio</strong>
+        </a>
+        <div class="connection" id="connectionStatus">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span>连接 Codex</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="source-pane">
+          <div class="pane-heading">
+            <span class="eyebrow">IMAGE → PROMPT</span>
+            <h1>看懂一张图，<br />再把它改成你的。</h1>
+          </div>
+
+          <label class="drop-zone" id="dropZone" for="imageInput">
+            <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp" />
+            <div class="drop-empty" id="dropEmpty">
+              <span class="drop-symbol" aria-hidden="true">↗</span>
+              <strong>拖入或粘贴图片</strong>
+              <span>也可以点击选择</span>
+            </div>
+            <img id="sourcePreview" alt="待分析的参考图预览" hidden />
+            <span class="replace-hint" id="replaceHint" hidden>点击更换图片</span>
+          </label>
+
+          <div class="source-actions">
+            <button class="button button-primary" id="analyzeButton" type="button" disabled>
+              开始分析
+            </button>
+            <button class="button button-quiet" id="clearButton" type="button" disabled>
+              清空
+            </button>
+          </div>
+
+          <section class="analysis-experience" id="analysisExperience" aria-live="polite" hidden>
+            <div class="analysis-orbit" aria-hidden="true">
+              <span class="orbit-ring orbit-ring-one"></span>
+              <span class="orbit-ring orbit-ring-two"></span>
+              <span class="orbit-core"></span>
+              <span class="orbit-satellite"></span>
+            </div>
+            <div class="analysis-copy">
+              <div class="analysis-heading">
+                <strong class="activity-state" id="activityState">图片已就绪</strong>
+                <time class="analysis-elapsed" id="analysisElapsed">READY</time>
+              </div>
+              <p id="analysisDetail">保存在本地，尚未发送给 Codex</p>
+              <ol class="activity-list" id="activityList">
+                <li class="is-current">本地图片</li>
+                <li>Codex 接收</li>
+                <li>视觉拆解</li>
+                <li>生成字段</li>
+              </ol>
+            </div>
+          </section>
+        </aside>
+
+        <section class="recipe-pane">
+          <div class="recipe-empty" id="recipeEmpty">
+            <span class="empty-symbol" aria-hidden="true">⌁</span>
+            <h2>分析后，在这里编辑。</h2>
+            <p>视觉关系会自动拆成独立字段。</p>
+          </div>
+
+          <div class="recipe-editor" id="recipeEditor" hidden>
+            <div class="recipe-header">
+              <div>
+                <span class="eyebrow">VISUAL RECIPE</span>
+                <h2 id="recipeTitle">视觉配方</h2>
+              </div>
+              <span class="schema-badge">可编辑</span>
+            </div>
+
+            <div class="section-stack" id="sectionStack"></div>
+
+            <section class="boundary-section">
+              <div class="section-title-row">
+                <span class="section-code">Q</span>
+                <div>
+                  <h3>迁移与真值边界</h3>
+                  <p>决定保留什么，以及避免什么。</p>
+                </div>
+              </div>
+              <div class="boundary-grid" id="boundaryGrid"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <footer class="export-dock" id="exportDock" hidden>
+        <div class="change-summary">
+          <span class="change-count" id="changeCount">0</span>
+          <span>处修改</span>
+        </div>
+        <button class="button button-rebuild" id="reviseButton" type="button">
+          重新生成
+        </button>
+        <textarea id="compiledPrompt" hidden readonly></textarea>
+        <div class="copy-actions">
+          <button class="button button-quiet" id="copyJsonButton" type="button">复制 JSON</button>
+          <button class="button button-primary" id="copyPromptButton" type="button">复制提示词</button>
+        </div>
+      </footer>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

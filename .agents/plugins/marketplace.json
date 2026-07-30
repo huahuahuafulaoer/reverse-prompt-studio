@@ -1,0 +1,20 @@
+{
+  "name": "reverse-prompt-studio-marketplace",
+  "interface": {
+    "displayName": "Reverse Prompt Studio Marketplace"
+  },
+  "plugins": [
+    {
+      "name": "reverse-prompt-studio",
+      "source": {
+        "source": "local",
+        "path": "./plugins/reverse-prompt-studio"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

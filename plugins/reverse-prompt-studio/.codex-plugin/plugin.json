@@ -1,0 +1,27 @@
+{
+  "name": "reverse-prompt-studio",
+  "version": "0.1.0",
+  "description": "Local interactive workspace for reverse-engineering and editing image prompts with the user's own Codex session.",
+  "author": {
+    "name": "huahuahuafulaoer",
+    "url": "https://github.com/huahuahuafulaoer"
+  },
+  "homepage": "https://github.com/huahuahuafulaoer/reverse-prompt-studio#readme",
+  "repository": "https://github.com/huahuahuafulaoer/reverse-prompt-studio",
+  "license": "MIT",
+  "keywords": ["image-prompt", "visual-analysis", "prompt-editor", "codex"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Reverse Prompt Studio",
+    "shortDescription": "把参考图拆成可编辑、可锁定的视觉提示词结构。",
+    "longDescription": "在本机打开交互式工作台，通过用户自己的 Codex 会话分析参考图、编辑视觉板块，并重新整理为可复制提示词。",
+    "developerName": "huahuahuafulaoer",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Vision", "Local"],
+    "brandColor": "#C8FF3D",
+    "defaultPrompt": [
+      "启动图片提示词工作台",
+      "打开 Reverse Prompt Studio"
+    ]
+  }
+}

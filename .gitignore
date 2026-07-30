@@ -1,0 +1,6 @@
+data/runs/*
+!data/runs/.gitkeep
+node_modules/
+.DS_Store
+*.log
+PROJECT_MEMORY.md

@@ -1,0 +1,12 @@
+{
+  "name": "reverse-prompt-studio-marketplace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "npm --prefix plugins/reverse-prompt-studio start",
+    "test": "npm --prefix plugins/reverse-prompt-studio test",
+    "check": "npm --prefix plugins/reverse-prompt-studio run check",
+    "verify": "npm test && npm run check"
+  }
+}

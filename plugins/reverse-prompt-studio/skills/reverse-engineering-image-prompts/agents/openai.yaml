@@ -1,0 +1,4 @@
+interface:
+  display_name: "参考图反推提示词"
+  short_description: "把参考图转成易读控制卡、可编辑字段与可复制生成 JSON"
+  default_prompt: "Use $reverse-engineering-image-prompts to analyze this reference image and return the default Chinese visual control card."
