@@ -46,3 +46,20 @@ test("compact export dock does not render the prompt preview", async () => {
   assert.match(html, /<textarea id="compiledPrompt" hidden/);
   assert.match(css, /\.export-dock\s*\{[^}]*width:\s*fit-content/s);
 });
+
+test("new releases appear in a compact dismissible update strip", async () => {
+  const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+  const updateState = await readFile(
+    path.join(projectDirectory, "public/update-state.js"),
+    "utf8",
+  );
+  const css = await readFile(path.join(projectDirectory, "public/styles.css"), "utf8");
+
+  assert.match(html, /id="updateBanner"/);
+  assert.match(html, /id="copyUpdateButton"/);
+  assert.match(html, /id="dismissUpdateButton"/);
+  assert.match(script, /async function checkForUpdates\(\)/);
+  assert.match(updateState, /reverse-prompt-studio-dismissed-update/);
+  assert.match(css, /\.update-banner/);
+});

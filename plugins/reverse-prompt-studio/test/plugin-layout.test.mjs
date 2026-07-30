@@ -11,6 +11,9 @@ test("the marketplace points to a self-contained Reverse Prompt Studio plugin", 
   const manifest = JSON.parse(
     await readFile(path.join(pluginRoot, ".codex-plugin/plugin.json"), "utf8"),
   );
+  const packageMetadata = JSON.parse(
+    await readFile(path.join(pluginRoot, "package.json"), "utf8"),
+  );
   const marketplace = JSON.parse(
     await readFile(
       path.join(marketplaceRoot, ".agents/plugins/marketplace.json"),
@@ -19,6 +22,8 @@ test("the marketplace points to a self-contained Reverse Prompt Studio plugin", 
   );
 
   assert.equal(manifest.name, "reverse-prompt-studio");
+  assert.equal(manifest.version, "0.2.0");
+  assert.equal(packageMetadata.version, manifest.version);
   assert.equal(manifest.repository, "https://github.com/huahuahuafulaoer/reverse-prompt-studio");
   assert.equal(manifest.skills, "./skills/");
   assert.equal(marketplace.plugins[0].source.path, "./plugins/reverse-prompt-studio");

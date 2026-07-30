@@ -32,12 +32,22 @@ test("HTTP app uploads an image, analyzes it, and revises the same run", async (
       service,
       store,
       publicDirectory: path.join(testDirectory, "../public"),
+      updateChecker: {
+        check: async () => ({
+          status: "available",
+          currentVersion: "0.1.0",
+          latestVersion: "0.2.0",
+        }),
+      },
     });
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
     const origin = `http://127.0.0.1:${address.port}`;
     const health = await fetch(`${origin}/api/health`).then((response) => response.json());
     assert.equal(health.status, "ready");
+    const update = await fetch(`${origin}/api/update`).then((response) => response.json());
+    assert.equal(update.status, "available");
+    assert.equal(update.latestVersion, "0.2.0");
 
     const uploadResponse = await fetch(`${origin}/api/upload`, {
       method: "POST",

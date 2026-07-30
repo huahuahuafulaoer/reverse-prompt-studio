@@ -1,6 +1,6 @@
 import os from "node:os";
 import { spawn } from "node:child_process";
-import { access, mkdir } from "node:fs/promises";
+import { access, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,6 +13,7 @@ import {
   resolveRuntimePaths,
 } from "./runtime-config.mjs";
 import { StudioService } from "./studio-service.mjs";
+import { UpdateChecker } from "./update-checker.mjs";
 
 const sourceDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectDirectory = path.resolve(sourceDirectory, "..");
@@ -28,14 +29,22 @@ await Promise.all([
   mkdir(workspaceRoot, { recursive: true }),
 ]);
 await access(skillPath);
+const packageMetadata = JSON.parse(
+  await readFile(path.join(projectDirectory, "package.json"), "utf8"),
+);
 
 const appServer = await CodexAppServer.launch({ cwd: workspaceRoot });
 const store = new RunStore(path.join(dataRoot, "runs"));
 const service = new StudioService({ appServer, store, workspaceRoot, skillPath });
+const updateChecker = new UpdateChecker({
+  currentVersion: packageMetadata.version,
+  cachePath: path.join(dataRoot, "update-check.json"),
+});
 const server = createStudioHttpServer({
   service,
   store,
   publicDirectory: path.join(projectDirectory, "public"),
+  updateChecker,
 });
 
 appServer.on("stderr", (message) => {

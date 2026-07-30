@@ -15,7 +15,7 @@ const CONTENT_TYPES = new Map([
   [".svg", "image/svg+xml"],
 ]);
 
-export function createStudioHttpServer({ service, store, publicDirectory }) {
+export function createStudioHttpServer({ service, store, publicDirectory, updateChecker }) {
   const clients = new Set();
   const onServiceEvent = (event) => {
     const payload = `event: codex\ndata: ${JSON.stringify(event)}\n\n`;
@@ -29,6 +29,13 @@ export function createStudioHttpServer({ service, store, publicDirectory }) {
 
       if (request.method === "GET" && url.pathname === "/api/health") {
         return sendJson(response, 200, { status: "ready" });
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/update") {
+        const update = updateChecker
+          ? await updateChecker.check()
+          : { status: "unavailable" };
+        return sendJson(response, 200, update);
       }
 
       if (request.method === "GET" && url.pathname === "/api/events") {

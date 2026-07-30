@@ -1,6 +1,6 @@
 {
   "name": "reverse-prompt-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Local interactive image prompt editor powered by the user's own Codex session.",
   "license": "MIT",
@@ -11,6 +11,6 @@
   "scripts": {
     "start": "node scripts/start-studio.mjs",
     "test": "node --test",
-    "check": "node --check scripts/start-studio.mjs && node --check src/server.mjs && node --check src/runtime-config.mjs && node --check src/codex-client.mjs && node --check src/recipe.mjs && node --check public/app.js"
+    "check": "node --check scripts/start-studio.mjs && node --check src/server.mjs && node --check src/runtime-config.mjs && node --check src/update-checker.mjs && node --check src/codex-client.mjs && node --check src/recipe.mjs && node --check public/app.js && node --check public/update-state.js"
   }
 }
