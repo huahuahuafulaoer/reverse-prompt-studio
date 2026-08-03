@@ -154,7 +154,7 @@ test("image replacement switches runs only after upload succeeds", async () => {
   assert.doesNotMatch(acceptProduct, /catch \(error\) \{\s*resetProductState\(\)/);
 });
 
-test("finish workbench asks only for the approved image and optional tone direction", async () => {
+test("finish workbench separates automatic photographic realism from optional brand direction", async () => {
   const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
   const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
   assert.match(html, /data-mode="brand-grade"/);
@@ -162,8 +162,11 @@ test("finish workbench asks only for the approved image and optional tone direct
   assert.match(html, /id="finish-direction"/);
   assert.match(html, /id="finish-analyze"/);
   assert.match(html, /id="finish-summary"/);
-  assert.match(html, /id="finish-priorities"/);
+  assert.match(html, /id="finish-realism-priorities"/);
+  assert.match(html, /id="finish-brand-direction"/);
   assert.match(html, /id="copy-finish-prompt"/);
+  assert.match(html, /品牌调性/);
+  assert.match(html, /不填写则只提升真实感/);
   assert.doesNotMatch(html, /id="gate-rail"|id="finding-list"|id="candidate-panel"/);
   assert.doesNotMatch(html, /id="add-evidence"|name="channel"|name="audience"/);
   assert.match(script, /\/finish-plan/);
@@ -178,6 +181,8 @@ test("finish workbench presents one full-frame finishing action without diagnost
   assert.match(brandMarkup, /成稿精修/);
   assert.match(brandMarkup, /生成精修提示词/);
   assert.match(brandMarkup, />\s*复制精修提示词\s*</);
+  assert.match(brandMarkup, /摄影真实感/);
+  assert.match(brandMarkup, /品牌调性/);
   assert.doesNotMatch(brandMarkup, /诊断|问题|修复图|批准|参考图|品牌气质|文案安全区|渠道|受众/);
   assert.doesNotMatch(script, /presentAudit|presentComparison|repairActionState|canApproveCandidate/);
   assert.doesNotMatch(`${html}\n${script}`, /Codex App Server/);

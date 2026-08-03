@@ -184,7 +184,7 @@
       <main class="finish-workspace" data-workspace="brand-grade" hidden>
         <header class="finish-heading">
           <h1>成稿精修</h1>
-          <p>只优化画质与光影调性，保持画面内容不变。</p>
+          <p>只优化摄影真实感与品牌调性，保持画面内容不变。</p>
         </header>
 
         <section class="finish-source">
@@ -204,11 +204,12 @@
 
         <section id="finish-controls" class="finish-controls" hidden>
           <label class="finish-direction" for="finish-direction">
-            <span>想要的画面调性 <small>可选</small></span>
+            <span>品牌调性 <small>可选</small></span>
+            <small class="finish-direction__hint">不填写则只提升真实感，并延续原图调性</small>
             <textarea
               id="finish-direction"
               rows="3"
-              placeholder="例如：光线更通透，肤色自然，保留户外商业摄影的真实质感"
+              placeholder="例如：专业、克制、户外机能感；自然光，不要过度电影化"
             ></textarea>
           </label>
           <div class="finish-controls__actions">
@@ -234,7 +235,11 @@
             </button>
           </div>
           <p id="finish-summary" class="finish-summary"></p>
-          <ol id="finish-priorities" class="finish-priorities"></ol>
+          <div class="finish-result-group">
+            <h3>摄影真实感</h3>
+            <ol id="finish-realism-priorities" class="finish-priorities"></ol>
+          </div>
+          <div id="finish-brand-direction" class="finish-brand-direction"></div>
         </section>
       </main>
     </div>

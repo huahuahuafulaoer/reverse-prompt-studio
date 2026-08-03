@@ -106,22 +106,32 @@ function comparisonFixture() {
   };
 }
 
-function finishOnlyPlanFixture() {
+function finishOnlyPlanFixture(promptText) {
+  const hasDirection = /Brand direction supplied: yes/.test(promptText);
   return {
-    schema: "finish-only-plan/v1",
+    schema: "finish-only-plan/v2",
     assessment: "画面内容已经完整，当前只需统一真实质感与光影完成度。",
-    priorities: [
+    realismPriorities: [
       {
-        area: "texture_realism",
+        area: "material_response",
         observation: "局部表面存在重复、均匀的高频纹理。",
         treatment: "保留原有大形和中层结构，仅清理重复纹理并让微细节随景深自然衰减。",
       },
       {
-        area: "light_tone",
+        area: "lighting_coherence",
         observation: "主体与环境的局部对比和锐度略显割裂。",
         treatment: "延续原有光线方向，统一局部对比、暗部层次和色温，不做全局 HDR。",
       },
     ],
+    brandDirection: hasDirection ? {
+      mode: "user_direction",
+      intent: "自然通透、保留户外纪实感",
+      treatment: "控制饱和度与黑位，保持自然通透、专业克制的户外纪实质感。",
+    } : {
+      mode: "preserve_existing",
+      intent: "延续原图调性",
+      treatment: "保留原图已有的色温、对比与饱和度关系，不额外套用新的风格。",
+    },
   };
 }
 
@@ -314,8 +324,8 @@ rl.on("line", (line) => {
         ],
       });
     }
-    const payload = promptText.includes("finish-only-plan/v1")
-      ? finishOnlyPlanFixture()
+    const payload = promptText.includes("finish-only-plan/v2")
+      ? finishOnlyPlanFixture(promptText)
       : promptText.includes("brand-grade-comparison/v1")
       ? comparisonFixture()
       : promptText.includes("brand-grade-audit/v1")

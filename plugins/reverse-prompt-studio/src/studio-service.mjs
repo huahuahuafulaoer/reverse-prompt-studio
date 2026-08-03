@@ -197,7 +197,7 @@ export class StudioService extends EventEmitter {
       sourcePath: await this.#store.getImagePath(runId),
       direction: normalizedDirection,
       skillPath: this.#brandGradeSkillPath,
-    })));
+    })), { hasBrandDirection: normalizedDirection !== "" });
     const result = {
       ...plan,
       sourceVersionId: run.sourceVersionId,

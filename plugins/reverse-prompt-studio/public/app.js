@@ -108,7 +108,8 @@ const finishElements = {
   progressTitle: document.querySelector("#finish-progress-title"),
   results: document.querySelector("#finish-results"),
   summary: document.querySelector("#finish-summary"),
-  priorities: document.querySelector("#finish-priorities"),
+  realismPriorities: document.querySelector("#finish-realism-priorities"),
+  brandDirection: document.querySelector("#finish-brand-direction"),
   copyPrompt: document.querySelector("#copy-finish-prompt"),
 };
 
@@ -1087,7 +1088,8 @@ function resetFinishOutput() {
   finish.plan = null;
   finishElements.results.hidden = true;
   finishElements.summary.textContent = "";
-  finishElements.priorities.replaceChildren();
+  finishElements.realismPriorities.replaceChildren();
+  finishElements.brandDirection.replaceChildren();
 }
 
 async function analyzeFinish() {
@@ -1129,6 +1131,11 @@ function stopFinishProgress() {
 }
 
 const finishAreaLabels = {
+  lighting_coherence: "光影一致",
+  skin_realism: "皮肤真实",
+  material_response: "材质响应",
+  depth_optics: "景深与锐度",
+  image_finish: "成片收口",
   texture_realism: "纹理真实感",
   skin_people: "人物与皮肤",
   material_separation: "材质区分",
@@ -1138,8 +1145,9 @@ const finishAreaLabels = {
 
 function renderFinishPlan(plan) {
   finishElements.summary.textContent = plan.assessment;
-  finishElements.priorities.replaceChildren();
-  for (const priority of plan.priorities) {
+  finishElements.realismPriorities.replaceChildren();
+  const realismPriorities = plan.realismPriorities ?? plan.priorities ?? [];
+  for (const priority of realismPriorities) {
     const item = document.createElement("li");
     item.className = "finish-priority";
     item.append(
@@ -1147,8 +1155,17 @@ function renderFinishPlan(plan) {
       createTextElement("strong", "finish-priority__observation", priority.observation),
       createTextElement("p", "finish-priority__treatment", priority.treatment),
     );
-    finishElements.priorities.append(item);
+    finishElements.realismPriorities.append(item);
   }
+  const brand = plan.brandDirection ?? {
+    intent: "延续原图调性",
+    treatment: "不额外套用新的风格。",
+  };
+  finishElements.brandDirection.replaceChildren(
+    createTextElement("span", "finish-priority__area", "品牌调性"),
+    createTextElement("strong", "finish-priority__observation", brand.intent),
+    createTextElement("p", "finish-priority__treatment", brand.treatment),
+  );
   finishElements.results.hidden = false;
   finishElements.results.scrollIntoView({ behavior: "smooth", block: "start" });
 }

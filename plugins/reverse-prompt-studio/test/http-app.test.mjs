@@ -227,8 +227,9 @@ test("HTTP app supports the complete brand-grade lifecycle", async () => {
     );
     assert.equal(finishPlanResponse.status, 200);
     const finishPlan = await finishPlanResponse.json();
-    assert.equal(finishPlan.schema, "finish-only-plan/v1");
-    assert.match(finishPlan.platformPrompt, /自然通透、保留原有暖光/);
+    assert.equal(finishPlan.schema, "finish-only-plan/v2");
+    assert.match(finishPlan.platformPrompt, /品牌调性：自然通透/);
+    assert.match(finishPlan.platformPrompt, /户外纪实/);
 
     const auditResponse = await fetch(`${origin}/api/brand-grade/runs/${run.id}/audit`, {
       method: "POST",

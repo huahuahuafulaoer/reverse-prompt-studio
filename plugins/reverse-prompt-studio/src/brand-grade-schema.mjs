@@ -5,11 +5,11 @@ const VISUAL_STATE_GROUPS = Object.freeze([
 ]);
 const VISUAL_STATE_PATH_PATTERN = `^(?:${VISUAL_STATE_GROUPS.join("|")})\\.[^\\s.]+$`;
 const FINISH_ONLY_AREAS = Object.freeze([
-  "texture_realism",
-  "skin_people",
-  "material_separation",
-  "light_tone",
-  "technical_finish",
+  "lighting_coherence",
+  "skin_realism",
+  "material_response",
+  "depth_optics",
+  "image_finish",
 ]);
 const PROTECTED_CONTENT_TERMS = "人物|身份|面部|脸部|身体|姿态|动作|产品|装备|服装|文字|标志|logo|构图|裁切|镜头|场景|结构|几何|物体位置";
 const CONTENT_CHANGE_TERMS = "调整|改变|修改|更换|替换|移动|删除|增加|添加|重做|重绘|重构";
@@ -212,34 +212,47 @@ export function validateBrandGradeComparison(report) {
   return report;
 }
 
-export function validateFinishOnlyPlan(plan) {
+function validateFinishTreatment(treatment, path) {
+  string(treatment, path);
+  if (protectedContentChangePattern.test(treatment)) {
+    throw new Error(`${path} changes protected content`);
+  }
+  if (generativeReconstructionPattern.test(treatment)) {
+    throw new Error(`${path} requests generative reconstruction`);
+  }
+}
+
+export function validateFinishOnlyPlan(plan, { hasBrandDirection = false } = {}) {
   object(plan, "plan");
-  if (plan.schema !== "finish-only-plan/v1") {
-    throw new Error("schema must be finish-only-plan/v1");
+  if (plan.schema !== "finish-only-plan/v2") {
+    throw new Error("schema must be finish-only-plan/v2");
   }
   string(plan.assessment, "assessment");
-  if (!Array.isArray(plan.priorities) || plan.priorities.length < 1 || plan.priorities.length > 4) {
-    throw new Error("priorities must contain 1-4 items");
+  if (!Array.isArray(plan.realismPriorities)
+    || plan.realismPriorities.length < 1
+    || plan.realismPriorities.length > 4) {
+    throw new Error("realismPriorities must contain 1-4 items");
   }
   const seenAreas = new Set();
-  plan.priorities.forEach((priority, index) => {
-    object(priority, `priorities[${index}]`);
+  plan.realismPriorities.forEach((priority, index) => {
+    object(priority, `realismPriorities[${index}]`);
     if (!FINISH_ONLY_AREAS.includes(priority.area)) {
-      throw new Error(`priorities[${index}].area is invalid`);
+      throw new Error(`realismPriorities[${index}].area is invalid`);
     }
     if (seenAreas.has(priority.area)) {
-      throw new Error(`priorities[${index}].area is duplicated`);
+      throw new Error(`realismPriorities[${index}].area is duplicated`);
     }
     seenAreas.add(priority.area);
-    string(priority.observation, `priorities[${index}].observation`);
-    string(priority.treatment, `priorities[${index}].treatment`);
-    if (protectedContentChangePattern.test(priority.treatment)) {
-      throw new Error(`priorities[${index}].treatment changes protected content`);
-    }
-    if (generativeReconstructionPattern.test(priority.treatment)) {
-      throw new Error(`priorities[${index}].treatment requests generative reconstruction`);
-    }
+    string(priority.observation, `realismPriorities[${index}].observation`);
+    validateFinishTreatment(priority.treatment, `realismPriorities[${index}].treatment`);
   });
+  object(plan.brandDirection, "brandDirection");
+  const expectedMode = hasBrandDirection ? "user_direction" : "preserve_existing";
+  if (plan.brandDirection.mode !== expectedMode) {
+    throw new Error(`brandDirection.mode must be ${expectedMode}`);
+  }
+  string(plan.brandDirection.intent, "brandDirection.intent");
+  validateFinishTreatment(plan.brandDirection.treatment, "brandDirection.treatment");
   return plan;
 }
 
@@ -388,11 +401,11 @@ export const brandGradeComparisonOutputSchema = {
 export const finishOnlyPlanOutputSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["schema", "assessment", "priorities"],
+  required: ["schema", "assessment", "realismPriorities", "brandDirection"],
   properties: {
-    schema: { type: "string", const: "finish-only-plan/v1" },
+    schema: { type: "string", const: "finish-only-plan/v2" },
     assessment: { type: "string" },
-    priorities: {
+    realismPriorities: {
       type: "array",
       minItems: 1,
       maxItems: 4,
@@ -405,6 +418,16 @@ export const finishOnlyPlanOutputSchema = {
           observation: { type: "string" },
           treatment: { type: "string" },
         },
+      },
+    },
+    brandDirection: {
+      type: "object",
+      additionalProperties: false,
+      required: ["mode", "intent", "treatment"],
+      properties: {
+        mode: { type: "string", enum: ["user_direction", "preserve_existing"] },
+        intent: { type: "string" },
+        treatment: { type: "string" },
       },
     },
   },

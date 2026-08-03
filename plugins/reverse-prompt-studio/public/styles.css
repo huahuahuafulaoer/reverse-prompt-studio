@@ -1222,6 +1222,12 @@ label:focus-within {
   font-weight: 560;
 }
 
+.finish-direction .finish-direction__hint {
+  margin-top: -3px;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 .finish-direction textarea {
   width: 100%;
   min-height: 88px;
@@ -1280,6 +1286,17 @@ label:focus-within {
   line-height: 1.7;
 }
 
+.finish-result-group {
+  display: grid;
+  gap: 10px;
+}
+
+.finish-result-group h3 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+}
+
 .finish-priorities {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1320,6 +1337,17 @@ label:focus-within {
   color: var(--ink-soft);
   font-size: 11px;
   line-height: 1.65;
+}
+
+.finish-brand-direction {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
 }
 
 .finish-section-heading {

@@ -378,10 +378,12 @@ test("StudioService creates one full-frame finish-only prompt from the approved 
       direction: "更通透，但保持户外纪实质感",
     });
 
-    assert.equal(result.schema, "finish-only-plan/v1");
+    assert.equal(result.schema, "finish-only-plan/v2");
     assert.equal(result.sourceVersionId, "source-v1");
     assert.match(result.platformPrompt, /已确认母版/);
-    assert.match(result.platformPrompt, /更通透，但保持户外纪实质感/);
+    assert.match(result.platformPrompt, /摄影真实感/);
+    assert.match(result.platformPrompt, /品牌调性/);
+    assert.match(result.platformPrompt, /更通透|户外纪实|专业克制/);
     const persisted = await store.loadLatestFinishOnlyPlan(run.id);
     assert.deepEqual(persisted, result);
     const persistedRun = await store.loadRun(run.id);
