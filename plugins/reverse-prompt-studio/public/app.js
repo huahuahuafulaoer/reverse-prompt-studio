@@ -1,14 +1,17 @@
 import {
-  collectFieldChanges,
+  buildRevisionPlan,
+  clearSubmittedSectionInstructions,
   formatElapsedTime,
   isSectionLocked,
   normalizeSectionLocks,
   progressForCodexEvent,
   productStatusLabel,
   restoreLockedSections,
-  setSectionLocked,
+  sectionInstructionView,
+  setSectionRevisionLocked,
   updateEditorField,
   updateRecipeList,
+  updateSectionInstruction,
 } from "/editor-state.js";
 import {
   UPDATE_DISMISS_KEY,
@@ -36,6 +39,8 @@ const state = {
   productApplied: false,
   transferMode: "content_fidelity",
   replacementSubject: "",
+  sectionInstructions: {},
+  updatedSectionIds: [],
   analysisStartedAt: null,
   analysisTimer: null,
   update: null,
@@ -437,24 +442,32 @@ async function analyzeImage() {
 
 async function reviseRecipe() {
   if (!state.runId || !state.recipe || state.busy) return;
-  const changes = collectFieldChanges(state.recipe);
-  const totalChanges = Object.keys(changes.changed).length + changes.changedPaths.length;
-  if (!totalChanges) return showToast("还没有需要重新梳理的修改");
+  const plan = buildRevisionPlan(state.recipe, state.sectionInstructions);
+  if (!plan.totalChanges) return showToast("请先写下想修改的内容");
 
-  setBusy(true, "Codex 正在重新梳理");
+  setBusy(true, "正在按要求修改");
   const lockedSectionIds = state.recipe.sections
     .filter((section) => isSectionLocked(section))
     .map((section) => section.id);
   startAnalysisExperience({
-    label: "正在提交修改",
-    detail: "Codex 会在同一个任务里重新组织提示词",
+    label: "正在按要求修改",
+    detail: "会合并本次填写的全部板块",
   });
   try {
     const result = await fetchJson("/api/revise", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runId: state.runId, recipe: state.recipe }),
+      body: JSON.stringify({
+        runId: state.runId,
+        recipe: state.recipe,
+        sectionInstructions: plan.sectionInstructions,
+      }),
     });
+    state.sectionInstructions = clearSubmittedSectionInstructions(
+      state.sectionInstructions,
+      plan.sectionInstructions,
+    );
+    state.updatedSectionIds = plan.authorizedSectionIds;
     applyResult(result, lockedSectionIds);
     showToast("新的视觉配方已生成");
     finishAnalysisExperience({
@@ -527,15 +540,22 @@ function renderRecipe() {
     const heading = document.createElement("div");
     heading.className = "section-title-row";
     heading.append(
-      createTextElement("span", "section-code", section.id),
-      createHeadingCopy(section.label, `${section.fields.length} 个可编辑字段`),
+      createHeadingCopy(section.label),
       createSectionLockButton(section, container),
     );
 
+    const instructionControl = createSectionInstructionControl(section);
+    const details = document.createElement("details");
+    details.className = "section-details";
+    const summary = document.createElement("summary");
+    summary.textContent = "查看详细参数";
     const fieldList = document.createElement("div");
     fieldList.className = "field-list";
-    for (const field of section.fields) fieldList.append(createFieldRow(field));
-    container.append(heading, fieldList);
+    for (const field of section.fields) {
+      fieldList.append(createFieldRow(field, isSectionLocked(section)));
+    }
+    details.append(summary, fieldList);
+    container.append(heading, instructionControl, details);
     elements.sectionStack.append(container);
   }
 
@@ -544,7 +564,46 @@ function renderRecipe() {
   syncProductControls();
 }
 
-function createFieldRow(field) {
+function createSectionInstructionControl(section) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "section-instruction";
+  const textareaId = `section-instruction-${section.id}`;
+  const label = document.createElement("label");
+  label.htmlFor = textareaId;
+  const currentInstruction = state.sectionInstructions[section.id] ?? "";
+  const view = sectionInstructionView(
+    section,
+    currentInstruction,
+    state.updatedSectionIds.includes(section.id),
+  );
+  label.textContent = view.label;
+  const textarea = document.createElement("textarea");
+  textarea.id = textareaId;
+  textarea.value = currentInstruction;
+  textarea.placeholder = view.placeholder;
+  textarea.disabled = state.busy || view.locked;
+  textarea.setAttribute("aria-label", view.ariaLabel);
+  const status = document.createElement("span");
+  status.className = "section-instruction-status";
+  status.setAttribute("aria-live", "polite");
+  status.textContent = view.status;
+  textarea.addEventListener("input", () => {
+    state.sectionInstructions = updateSectionInstruction(
+      state.sectionInstructions,
+      section.id,
+      textarea.value,
+    );
+    state.updatedSectionIds = state.updatedSectionIds.filter((id) => id !== section.id);
+    const nextView = sectionInstructionView(section, textarea.value, false);
+    status.textContent = nextView.status;
+    updateChangeCount();
+    persistLocalState();
+  });
+  wrapper.append(label, textarea, status);
+  return wrapper;
+}
+
+function createFieldRow(field, sectionLocked = false) {
   const row = document.createElement("div");
   row.className = "field-row";
   row.classList.toggle("is-dirty", Boolean(field.dirty));
@@ -552,7 +611,6 @@ function createFieldRow(field) {
   const meta = document.createElement("div");
   meta.className = "field-meta";
   meta.append(
-    createTextElement("span", "field-id", field.id),
     createTextElement("label", "field-label", field.label),
     createTextElement("span", "confidence-badge", confidenceLabel(field.confidence)),
   );
@@ -560,8 +618,8 @@ function createFieldRow(field) {
   const input = document.createElement(field.control === "textarea" ? "textarea" : "input");
   input.className = "field-control";
   input.value = field.value ?? "";
-  input.disabled = state.busy;
-  input.setAttribute("aria-label", `${field.id} ${field.label}`);
+  input.disabled = state.busy || sectionLocked;
+  input.setAttribute("aria-label", field.label);
   input.addEventListener("input", () => {
     state.recipe = updateEditorField(state.recipe, field.id, { value: input.value });
     row.classList.add("is-dirty");
@@ -580,10 +638,16 @@ function createSectionLockButton(section, container) {
   updateSectionLockButton(button, section);
   button.addEventListener("click", () => {
     const nextLocked = button.getAttribute("aria-pressed") !== "true";
-    state.recipe = setSectionLocked(state.recipe, section.id, nextLocked);
-    const nextSection = state.recipe.sections.find((candidate) => candidate.id === section.id);
-    updateSectionLockButton(button, nextSection);
-    container.classList.toggle("is-locked", nextLocked);
+    const next = setSectionRevisionLocked(
+      state.recipe,
+      state.sectionInstructions,
+      section.id,
+      nextLocked,
+    );
+    state.recipe = next.recipe;
+    state.sectionInstructions = next.sectionInstructions;
+    state.updatedSectionIds = state.updatedSectionIds.filter((id) => id !== section.id);
+    renderRecipe();
     persistLocalState();
   });
   return button;
@@ -647,13 +711,11 @@ function renderBoundaries() {
   }
 }
 
-function createHeadingCopy(title, description) {
+function createHeadingCopy(title) {
   const wrapper = document.createElement("div");
   const heading = document.createElement("h3");
   heading.textContent = title;
-  const copy = document.createElement("p");
-  copy.textContent = description;
-  wrapper.append(heading, copy);
+  wrapper.append(heading);
   return wrapper;
 }
 
@@ -666,10 +728,18 @@ function createTextElement(tag, className, text) {
 
 function updateChangeCount() {
   if (!state.recipe) return;
-  const changes = collectFieldChanges(state.recipe);
-  const count = Object.keys(changes.changed).length + changes.changedPaths.length;
-  elements.changeCount.textContent = String(count);
-  elements.reviseButton.disabled = state.busy || count === 0;
+  const plan = buildRevisionPlan(state.recipe, state.sectionInstructions);
+  elements.changeCount.textContent = plan.sectionCount
+    ? `${plan.sectionCount} 个板块`
+    : plan.totalChanges
+      ? "已有修改"
+      : "暂无修改";
+  elements.reviseButton.textContent = plan.sectionCount
+    ? `提交 ${plan.sectionCount} 个板块的修改`
+    : plan.totalChanges
+      ? "提交本次修改"
+      : "提交修改";
+  elements.reviseButton.disabled = state.busy || plan.totalChanges === 0;
 }
 
 function handleCodexEvent(message) {
@@ -767,7 +837,13 @@ function syncTransferModeControls() {
 }
 
 function syncBusyControls(busy) {
-  for (const control of document.querySelectorAll(".field-control, .boundary-control")) {
+  for (const section of document.querySelectorAll(".recipe-section")) {
+    const disabled = busy || section.classList.contains("is-locked");
+    for (const control of section.querySelectorAll(".field-control, .section-instruction textarea")) {
+      control.disabled = disabled;
+    }
+  }
+  for (const control of document.querySelectorAll(".boundary-control")) {
     control.disabled = busy;
   }
 
@@ -806,6 +882,8 @@ function clearRun() {
   state.compiledPrompt = "";
   state.transferMode = "content_fidelity";
   state.replacementSubject = "";
+  state.sectionInstructions = {};
+  state.updatedSectionIds = [];
   if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
   state.previewUrl = null;
   resetProductState();
@@ -843,6 +921,8 @@ function resetProductState() {
 function resetRecipeOutput() {
   state.recipe = null;
   state.compiledPrompt = "";
+  state.sectionInstructions = {};
+  state.updatedSectionIds = [];
   elements.compiledPrompt.value = "";
   elements.recipeEmpty.hidden = false;
   elements.recipeEditor.hidden = true;
@@ -909,6 +989,7 @@ function persistLocalState() {
       productApplied: state.productApplied,
       transferMode: state.transferMode,
       replacementSubject: state.replacementSubject,
+      sectionInstructions: state.sectionInstructions,
     }),
   );
 }
@@ -924,6 +1005,8 @@ function restoreLocalState() {
     state.productApplied = Boolean(saved.productApplied);
     state.transferMode = saved.transferMode ?? "content_fidelity";
     state.replacementSubject = saved.replacementSubject ?? "";
+    state.sectionInstructions = saved.sectionInstructions ?? {};
+    state.updatedSectionIds = [];
     elements.compiledPrompt.value = state.compiledPrompt;
     elements.sourcePreview.src = `/api/runs/${state.runId}/image`;
     elements.sourcePreview.hidden = false;

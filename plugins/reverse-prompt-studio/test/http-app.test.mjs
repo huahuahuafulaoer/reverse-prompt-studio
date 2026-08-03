@@ -98,9 +98,51 @@ test("HTTP app uploads an image, analyzes it, and revises the same run", async (
     const revised = await fetch(`${origin}/api/revise`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runId: upload.runId, recipe: matched.recipe }),
+      body: JSON.stringify({
+        runId: upload.runId,
+        recipe: matched.recipe,
+        sectionInstructions: [{ sectionId: "L", instruction: "光线更柔和" }],
+      }),
     }).then((response) => response.json());
     assert.equal(revised.recipe.title, "Fake revised result");
+
+    const malformedInstructions = await fetch(`${origin}/api/revise`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: upload.runId, recipe: matched.recipe, sectionInstructions: {} }),
+    });
+    assert.equal(malformedInstructions.status, 400);
+
+    for (const sectionInstructions of [
+      [{ sectionId: "Z", instruction: "修改未知板块" }],
+      [
+        { sectionId: "C", instruction: "居中" },
+        { sectionId: "C", instruction: "靠右" },
+      ],
+      [{ sectionId: "C", instruction: "  " }],
+    ]) {
+      const invalid = await fetch(`${origin}/api/revise`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId: upload.runId, recipe: matched.recipe, sectionInstructions }),
+      });
+      assert.equal(invalid.status, 400);
+    }
+
+    const lockedRecipe = structuredClone(matched.recipe);
+    for (const field of lockedRecipe.sections.find((section) => section.id === "C").fields) {
+      field.locked = true;
+    }
+    const lockedInstruction = await fetch(`${origin}/api/revise`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        runId: upload.runId,
+        recipe: lockedRecipe,
+        sectionInstructions: [{ sectionId: "C", instruction: "改构图" }],
+      }),
+    });
+    assert.equal(lockedInstruction.status, 400);
 
     const swapUpload = await fetch(`${origin}/api/upload`, {
       method: "POST",

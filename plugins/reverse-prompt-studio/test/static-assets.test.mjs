@@ -38,6 +38,43 @@ test("section locks use icon-only controls instead of per-field buttons", async 
   assert.match(css, /\.section-lock-button/);
 });
 
+test("recipe sections render natural-language revision controls with collapsed advanced fields", async () => {
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+  const css = await readFile(path.join(projectDirectory, "public/styles.css"), "utf8");
+  const renderRecipe = script.slice(
+    script.indexOf("function renderRecipe()"),
+    script.indexOf("function renderBoundaries()"),
+  );
+
+  assert.match(renderRecipe, /createSectionInstructionControl\(section/);
+  assert.match(renderRecipe, /document\.createElement\("details"\)/);
+  assert.match(renderRecipe, /summary\.textContent = "查看详细参数"/);
+  assert.match(renderRecipe, /textarea\.setAttribute\("aria-label", view\.ariaLabel\)/);
+  assert.doesNotMatch(renderRecipe, /"section-code", section\.id/);
+  assert.doesNotMatch(renderRecipe, /"field-id", field\.id/);
+  assert.match(css, /\.section-instruction/);
+  assert.match(css, /\.section-details/);
+});
+
+test("revision requests persist section instructions and clear them only after success", async () => {
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+  const reviseRecipe = script.slice(
+    script.indexOf("async function reviseRecipe()"),
+    script.indexOf("async function matchProduct()"),
+  );
+  const persistence = script.slice(
+    script.indexOf("function persistLocalState()"),
+    script.indexOf("function activeWorkspace()"),
+  );
+
+  assert.match(reviseRecipe, /sectionInstructions: plan\.sectionInstructions/);
+  assert.match(reviseRecipe, /正在按要求修改/);
+  assert.match(reviseRecipe, /clearSubmittedSectionInstructions/);
+  assert.doesNotMatch(reviseRecipe.slice(reviseRecipe.indexOf("catch")), /sectionInstructions\s*=/);
+  assert.match(persistence, /sectionInstructions: state\.sectionInstructions/);
+  assert.match(persistence, /saved\.sectionInstructions/);
+});
+
 test("compact export dock does not render the prompt preview", async () => {
   const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
   const css = await readFile(path.join(projectDirectory, "public/styles.css"), "utf8");

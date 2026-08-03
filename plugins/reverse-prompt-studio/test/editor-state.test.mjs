@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 
 import * as editorState from "../public/editor-state.js";
 import {
+  buildRevisionPlan,
+  clearSubmittedSectionInstructions,
   collectFieldChanges,
+  sectionInstructionView,
+  setSectionRevisionLocked,
+  updateSectionInstruction,
   updateEditorField,
   updateRecipeList,
 } from "../public/editor-state.js";
@@ -37,10 +42,77 @@ test("a section lock applies to every field and is collected for revision", () =
   assert.equal(recipe.sections[0].fields[0].locked, false);
   assert.equal(next.sections[0].fields.every((field) => field.locked), true);
   assert.deepEqual(collectFieldChanges(next), {
-    changed: { L01: "右上" },
+    changed: {},
     locked: ["L01", "L02"],
     changedPaths: [],
   });
+});
+
+test("section instructions form one trimmed revision plan alongside advanced edits", () => {
+  const withComposition = {
+    sections: [
+      ...recipe.sections,
+      {
+        id: "C",
+        label: "构图",
+        fields: [
+          { id: "C01", label: "主体位置", value: "居中", locked: false, dirty: true },
+        ],
+      },
+    ],
+  };
+  let instructions = updateSectionInstruction({}, "L", "  光线更柔和一些  ");
+  instructions = updateSectionInstruction(instructions, "C", "构图更紧凑");
+
+  assert.deepEqual(buildRevisionPlan(withComposition, instructions), {
+    sectionInstructions: [
+      { sectionId: "L", instruction: "光线更柔和一些" },
+      { sectionId: "C", instruction: "构图更紧凑" },
+    ],
+    authorizedSectionIds: ["L", "C"],
+    sectionCount: 2,
+    totalChanges: 3,
+  });
+});
+
+test("locking a section clears its instruction and prevents its dirty fields from revision", () => {
+  const edited = updateEditorField(recipe, "L01", { value: "右上" });
+  const result = setSectionRevisionLocked(edited, { L: "光线更柔和" }, "L", true);
+
+  assert.equal(result.recipe.sections[0].fields.every((field) => field.locked), true);
+  assert.equal(result.recipe.sections[0].fields.every((field) => !field.dirty), true);
+  assert.deepEqual(result.sectionInstructions, {});
+  assert.deepEqual(buildRevisionPlan(result.recipe, result.sectionInstructions), {
+    sectionInstructions: [],
+    authorizedSectionIds: [],
+    sectionCount: 0,
+    totalChanges: 0,
+  });
+
+  const unlocked = setSectionRevisionLocked(result.recipe, result.sectionInstructions, "L", false);
+  assert.equal(unlocked.recipe.sections[0].fields.every((field) => !field.locked), true);
+});
+
+test("section instruction presentation is accessible, human, and reports lock/update state", () => {
+  assert.deepEqual(sectionInstructionView(recipe.sections[0], "让光线更柔和", false), {
+    label: "修改要求",
+    ariaLabel: "光影修改要求",
+    placeholder: "例如：让光线更柔和，阴影不要太重",
+    status: "已加入本次修改",
+    locked: false,
+  });
+  assert.equal(sectionInstructionView(recipe.sections[0], "", true).status, "已按要求更新");
+
+  const lockedSection = setSectionRevisionLocked(recipe, {}, "L", true).recipe.sections[0];
+  assert.equal(sectionInstructionView(lockedSection, "不会提交", false).status, "已锁定，不参与修改");
+});
+
+test("successful revision clears only submitted instructions while a failed request can retain all input", () => {
+  const input = { L: "柔和一点", C: "主体向右" };
+  const submitted = [{ sectionId: "L", instruction: "柔和一点" }];
+
+  assert.deepEqual(clearSubmittedSectionInstructions(input, submitted), { C: "主体向右" });
+  assert.deepEqual(input, { L: "柔和一点", C: "主体向右" });
 });
 
 test("updateRecipeList tracks edits outside regular field groups", () => {

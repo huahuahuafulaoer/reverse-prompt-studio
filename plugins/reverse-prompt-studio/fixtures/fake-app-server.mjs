@@ -121,6 +121,9 @@ rl.on("line", (line) => {
     const turnId = "turn_fake";
     const promptText = message.params.input.find((item) => item.type === "text")?.text ?? "";
     const revised = promptText.includes("更新这份视觉配方");
+    const revisionContract = revised
+      ? JSON.parse(promptText.trim().split("\n").at(-1))
+      : null;
     const productMatched = promptText.includes("匹配到当前视觉配方");
     const productAware =
       !productMatched && message.params.input.some(
@@ -215,11 +218,48 @@ rl.on("line", (line) => {
             },
           ],
         },
+        {
+          id: "L",
+          label: "光影",
+          fields: [
+            {
+              id: "L01",
+              label: "主光方向",
+              value: "柔和日光",
+              confidence: "high",
+              control: "text",
+              locked: false,
+            },
+          ],
+        },
       ],
       referenceTransfer: { preserve: [], translate: [], omit: [] },
       truthGaps: [],
       negativeConstraints: [],
     };
+    if (revisionContract?.current_recipe) {
+      recipe.transferMode = revisionContract.current_recipe.transferMode;
+      recipe.contentAnchors = structuredClone(revisionContract.current_recipe.contentAnchors);
+      recipe.sections = structuredClone(revisionContract.current_recipe.sections);
+      recipe.referenceTransfer = structuredClone(revisionContract.current_recipe.referenceTransfer);
+      recipe.truthGaps = structuredClone(revisionContract.current_recipe.truthGaps);
+      recipe.negativeConstraints = structuredClone(
+        revisionContract.current_recipe.negativeConstraints,
+      );
+      for (const change of revisionContract.changed_fields ?? []) {
+        const field = recipe.sections
+          .flatMap((section) => section.fields ?? [])
+          .find((candidate) => candidate.id === change.id);
+        if (field) field.value = change.value;
+      }
+      for (const { sectionId, instruction } of revisionContract.section_instructions ?? []) {
+        const section = recipe.sections.find((candidate) => candidate.id === sectionId);
+        const field = section?.fields?.[0];
+        if (!field) continue;
+        const percentage = instruction.match(/\d+(?:\.\d+)?%/)?.[0];
+        field.value = percentage ?? instruction;
+      }
+    }
     if (productMatched) {
       recipe.sections.push({
         id: "P",
@@ -235,20 +275,10 @@ rl.on("line", (line) => {
           },
         ],
       });
-      recipe.sections.push({
-        id: "L",
-        label: "被模型改写的光影",
-        fields: [
-          {
-            id: "L01",
-            label: "主光方向",
-            value: "模型擅自改成右下光",
-            confidence: "low",
-            control: "text",
-            locked: false,
-          },
-        ],
-      });
+      const lightSection = recipe.sections.find((section) => section.id === "L");
+      lightSection.label = "被模型改写的光影";
+      lightSection.fields[0].value = "模型擅自改成右下光";
+      lightSection.fields[0].confidence = "low";
     } else if (productAware) {
       recipe.sections.push({
         id: "P",

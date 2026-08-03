@@ -16,9 +16,12 @@ import {
 import { createRepairContract } from "./repair-contract.mjs";
 import {
   buildRevisionPrompt,
+  collectAuthorizedSectionIds,
   compilePortablePrompt,
   normalizeRecipe,
+  normalizeSectionInstructions,
   restoreLockedRecipeSections,
+  restoreRevisionRecipeSections,
   validateTransferRecipe,
   validateProductRecipe,
 } from "./recipe.mjs";
@@ -71,15 +74,23 @@ export class StudioService extends EventEmitter {
     };
   }
 
-  async revise(runId, currentRecipe) {
+  async revise(runId, currentRecipe, sectionInstructions = []) {
     const normalizedCurrentRecipe = normalizeRecipe(currentRecipe);
+    const normalizedInstructions = normalizeSectionInstructions(
+      normalizedCurrentRecipe,
+      sectionInstructions,
+    );
+    const authorizedSectionIds = collectAuthorizedSectionIds(
+      normalizedCurrentRecipe,
+      normalizedInstructions,
+    );
     const thread = await this.#getOrResumeThread(runId);
     const generatedRecipe = normalizeRecipe(
       await thread.run({
         input: [
           {
             type: "text",
-            text: buildRevisionPrompt(normalizedCurrentRecipe),
+            text: buildRevisionPrompt(normalizedCurrentRecipe, normalizedInstructions),
             text_elements: [],
           },
           {
@@ -91,7 +102,9 @@ export class StudioService extends EventEmitter {
         outputSchema: editorRecipeSchema,
       }),
     );
-    const recipe = restoreLockedRecipeSections(generatedRecipe, normalizedCurrentRecipe);
+    const recipe = restoreRevisionRecipeSections(generatedRecipe, normalizedCurrentRecipe, {
+      authorizedSectionIds,
+    });
     validateTransferRecipe(recipe, {
       expectedMode: normalizedCurrentRecipe.transferMode,
       replacementSubject: normalizedCurrentRecipe.transferMode === "subject_swap"

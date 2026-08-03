@@ -4,9 +4,12 @@ import assert from "node:assert/strict";
 import {
   applyFieldEdits,
   buildRevisionPrompt,
+  collectAuthorizedSectionIds,
   compilePortablePrompt,
   normalizeRecipe,
+  normalizeSectionInstructions,
   restoreLockedRecipeSections,
+  restoreRevisionRecipeSections,
   validateTransferRecipe,
   validateProductRecipe,
 } from "../src/recipe.mjs";
@@ -83,6 +86,98 @@ test("buildRevisionPrompt includes changes and locks while preserving the full s
   assert.match(prompt, /locked_field_ids/);
   assert.match(prompt, /"changed_paths":\["referenceTransfer\.preserve"\]/);
   assert.match(prompt, /reverse-image-prompt\/editor-v1/);
+});
+
+test("section instructions are trimmed and reject malformed, duplicate, unknown, empty, or locked entries", () => {
+  const recipe = normalizeRecipe(sampleRecipe);
+  assert.deepEqual(
+    normalizeSectionInstructions(recipe, [
+      { sectionId: "L", instruction: "  改成清晨的柔光  " },
+    ]),
+    [{ sectionId: "L", instruction: "改成清晨的柔光" }],
+  );
+  assert.throws(() => normalizeSectionInstructions(recipe, {}), /必须是数组/);
+  assert.throws(
+    () => normalizeSectionInstructions(recipe, [
+      { sectionId: "L", instruction: "柔光" },
+      { sectionId: "L", instruction: "硬光" },
+    ]),
+    /重复.*L/,
+  );
+  assert.throws(
+    () => normalizeSectionInstructions(recipe, [{ sectionId: "Z", instruction: "修改" }]),
+    /未知.*Z/,
+  );
+  assert.throws(
+    () => normalizeSectionInstructions(recipe, [{ sectionId: "L", instruction: "   " }]),
+    /不能为空/,
+  );
+
+  const locked = applyFieldEdits(recipe, { L01: { locked: true } });
+  assert.throws(
+    () => normalizeSectionInstructions(locked, [{ sectionId: "L", instruction: "修改光线" }]),
+    /锁定.*L/,
+  );
+});
+
+test("revision prompt authorizes instruction and dirty-field sections with a stable contract", () => {
+  const recipe = applyFieldEdits(normalizeRecipe(sampleRecipe), {
+    C03: { value: "68%" },
+  });
+  const instructions = normalizeSectionInstructions(recipe, [
+    { sectionId: "L", instruction: "光线更柔和" },
+  ]);
+
+  assert.deepEqual(collectAuthorizedSectionIds(recipe, instructions), ["C", "L"]);
+  const prompt = buildRevisionPrompt(recipe, instructions);
+  assert.match(prompt, /section_instructions/);
+  assert.match(prompt, /"sectionId":"L","instruction":"光线更柔和"/);
+  assert.match(prompt, /"authorized_section_ids":\["C","L"\]/);
+  assert.match(prompt, /按各板块职责/);
+  assert.match(prompt, /未授权板块.*逐字段完全一致/);
+  assert.match(prompt, /必要联动.*truthGaps/);
+  assert.match(prompt, /changed_fields/);
+  assert.match(prompt, /locked_field_ids/);
+  assert.match(prompt, /current_recipe/);
+});
+
+test("revision restoration precisely preserves unauthorized sections without turning them into locks", () => {
+  const current = normalizeRecipe({
+    ...sampleRecipe,
+    transferMode: "content_fidelity",
+    contentAnchors: {
+      subject: { value: "人物", preserve: true, sourceRole: "content_reference" },
+      action: { value: "行走", preserve: true, sourceRole: "content_reference" },
+      interaction: { value: "接触地面", preserve: true, sourceRole: "content_reference" },
+      scene: { value: "街道", preserve: true, sourceRole: "content_reference" },
+    },
+  });
+  const generated = normalizeRecipe({
+    ...sampleRecipe,
+    transferMode: "style_composition",
+    contentAnchors: {},
+    sections: [
+      {
+        id: "C",
+        label: "被模型改写的构图",
+        fields: [{ id: "C02", label: "主体位置", value: "模型擅改", locked: true }],
+      },
+      {
+        id: "L",
+        label: "光影",
+        fields: [{ id: "L01", label: "主光方向", value: "柔和清晨光", locked: false }],
+      },
+    ],
+  });
+
+  const restored = restoreRevisionRecipeSections(generated, current, {
+    authorizedSectionIds: ["L"],
+  });
+  assert.deepEqual(restored.sections.find((section) => section.id === "C"), current.sections[0]);
+  assert.equal(restored.sections.find((section) => section.id === "C").fields[0].locked, false);
+  assert.equal(restored.sections.find((section) => section.id === "L").fields[0].value, "柔和清晨光");
+  assert.equal(restored.transferMode, "content_fidelity");
+  assert.deepEqual(restored.contentAnchors, current.contentAnchors);
 });
 
 test("compilePortablePrompt renders one copyable prompt from structured fields", () => {

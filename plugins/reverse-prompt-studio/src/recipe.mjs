@@ -49,32 +49,96 @@ export function applyFieldEdits(recipe, edits) {
   return next;
 }
 
-export function buildRevisionPrompt(recipe) {
+export function normalizeSectionInstructions(recipe, sectionInstructions = []) {
+  if (!Array.isArray(sectionInstructions)) {
+    throw new Error("sectionInstructions 必须是数组");
+  }
+  const sections = new Map((recipe.sections ?? []).map((section) => [section.id, section]));
+  const seen = new Set();
+  return sectionInstructions.map((entry) => {
+    const sectionId = String(entry?.sectionId ?? "").trim();
+    const section = sections.get(sectionId);
+    if (!section) throw new Error(`未知板块 ${sectionId || "（空）"}`);
+    if (seen.has(sectionId)) throw new Error(`重复板块 ${sectionId}`);
+    seen.add(sectionId);
+    const instruction = typeof entry?.instruction === "string"
+      ? entry.instruction.trim()
+      : "";
+    if (!instruction) throw new Error(`板块 ${sectionId} 的修改要求不能为空`);
+    if ((section.fields ?? []).some((field) => field.locked)) {
+      throw new Error(`锁定板块 ${sectionId} 不能提交修改要求`);
+    }
+    return { sectionId, instruction };
+  });
+}
+
+export function collectAuthorizedSectionIds(recipe, sectionInstructions = []) {
+  const instructionIds = new Set(sectionInstructions.map((entry) => entry.sectionId));
+  return (recipe.sections ?? [])
+    .filter((section) =>
+      instructionIds.has(section.id)
+      || (section.fields ?? []).some((field) => field.dirty && !field.locked))
+    .map((section) => section.id);
+}
+
+export function buildRevisionPrompt(recipe, sectionInstructions = []) {
+  const normalizedInstructions = normalizeSectionInstructions(recipe, sectionInstructions);
   const changedFields = [];
   const lockedFieldIds = [];
 
   for (const section of recipe.sections) {
     for (const field of section.fields) {
-      if (field.dirty) changedFields.push({ id: field.id, value: field.value });
+      if (field.dirty && !field.locked) changedFields.push({ id: field.id, value: field.value });
       if (field.locked) lockedFieldIds.push(field.id);
     }
   }
+  const authorizedSectionIds = collectAuthorizedSectionIds(recipe, normalizedInstructions);
 
   const currentRecipe = clone(recipe);
   delete currentRecipe.editorChanges;
 
   return [
     "使用 $reverse-engineering-image-prompts 更新这份视觉配方。",
-    "只应用 changed_fields；严格保留 locked_field_ids；其他字段默认保持不变。",
-    "检查主体、动作、产品、构图、镜头、光影与材质之间的必要联动。",
+    "按各板块职责把 section_instructions 中的自然语言要求转换为该板块内部字段，并同时应用 changed_fields。",
+    "只允许修改 authorized_section_ids；未授权板块必须与 current_recipe 逐字段完全一致，字段 ID 保持稳定。",
+    "严格保留 locked_field_ids。检查必要联动；若联动涉及未授权或锁定板块，不得静默修改，保留原值并把冲突写入现有 truthGaps。",
     "返回完整且唯一的 reverse-image-prompt/editor-v1 结构化状态，不要附加 prose prompt。",
     JSON.stringify({
+      section_instructions: normalizedInstructions,
+      authorized_section_ids: authorizedSectionIds,
       changed_fields: changedFields,
       changed_paths: Object.keys(recipe.editorChanges ?? {}),
       locked_field_ids: lockedFieldIds,
       current_recipe: currentRecipe,
     }),
   ].join("\n\n");
+}
+
+export function restoreRevisionRecipeSections(
+  nextRecipe,
+  currentRecipe,
+  { authorizedSectionIds = [] } = {},
+) {
+  const next = clone(nextRecipe);
+  if (!currentRecipe) return next;
+  next.transferMode = currentRecipe.transferMode;
+  next.contentAnchors = clone(currentRecipe.contentAnchors);
+
+  const authorized = new Set(authorizedSectionIds);
+  const generatedSections = new Map(
+    (next.sections ?? []).map((section) => [section.id, section]),
+  );
+  next.sections = (currentRecipe.sections ?? []).map((currentSection) => {
+    const explicitlyLocked = (currentSection.fields ?? []).some((field) => field.locked);
+    if (!authorized.has(currentSection.id) || explicitlyLocked) {
+      return cleanPreservedSection(currentSection);
+    }
+    const generated = generatedSections.get(currentSection.id);
+    return generated
+      ? restoreRevisionFieldState(generated, currentSection)
+      : cleanPreservedSection(currentSection);
+  });
+  return next;
 }
 
 export function compilePortablePrompt(recipe) {
@@ -207,6 +271,38 @@ function cleanLockedSection(section) {
     dirty: false,
   }));
   return locked;
+}
+
+function cleanPreservedSection(section) {
+  const preserved = clone(section);
+  preserved.fields = (preserved.fields ?? []).map((field) => ({
+    ...field,
+    dirty: false,
+  }));
+  return preserved;
+}
+
+function restoreRevisionFieldState(generatedSection, currentSection) {
+  const generatedFields = new Map(
+    (generatedSection.fields ?? []).map((field) => [field.id, field]),
+  );
+  const currentFieldIds = new Set((currentSection.fields ?? []).map((field) => field.id));
+  const section = clone(generatedSection);
+  section.fields = (currentSection.fields ?? []).map((currentField) => {
+    const generated = generatedFields.get(currentField.id);
+    if (!generated || currentField.locked) {
+      return { ...clone(currentField), dirty: false };
+    }
+    return {
+      ...generated,
+      locked: Boolean(currentField.locked),
+      dirty: false,
+    };
+  });
+  for (const field of generatedSection.fields ?? []) {
+    if (!currentFieldIds.has(field.id)) section.fields.push({ ...clone(field), dirty: false });
+  }
+  return section;
 }
 
 function hasNonemptySection(recipe, sectionId) {

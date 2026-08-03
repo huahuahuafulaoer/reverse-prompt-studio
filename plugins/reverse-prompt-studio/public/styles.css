@@ -745,7 +745,7 @@ label:focus-within {
 
 .recipe-section,
 .boundary-section {
-  padding: 22px;
+  padding: 18px 20px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: #fbfcfa;
@@ -762,22 +762,10 @@ label:focus-within {
 
 .section-title-row {
   display: grid;
-  grid-template-columns: 32px 1fr auto;
+  grid-template-columns: 1fr auto;
   gap: 12px;
   align-items: center;
-  margin-bottom: 16px;
-}
-
-.section-code {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  color: #fff;
-  background: var(--ink);
-  font-size: 10px;
-  font-weight: 750;
+  margin-bottom: 12px;
 }
 
 .section-title-row h3,
@@ -826,7 +814,7 @@ label:focus-within {
 }
 
 .section-title-row h3 {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 650;
 }
 
@@ -839,6 +827,85 @@ label:focus-within {
 .field-list {
   display: grid;
   gap: 8px;
+  padding-top: 10px;
+}
+
+.section-instruction {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+}
+
+.section-instruction label {
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.section-instruction textarea {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 72px;
+  padding: 11px 12px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.section-instruction textarea:hover:not(:disabled),
+.section-instruction textarea:focus-visible {
+  border-color: var(--line-strong);
+}
+
+.section-instruction textarea:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.section-instruction textarea:disabled {
+  color: var(--ink-soft);
+  background: var(--surface-soft);
+  cursor: not-allowed;
+}
+
+.section-instruction-status {
+  min-height: 15px;
+  color: #58751c;
+  font-size: 9px;
+  font-weight: 650;
+  text-align: right;
+}
+
+.recipe-section.is-locked .section-instruction-status {
+  color: var(--ink-soft);
+}
+
+.section-details,
+.boundary-section {
+  margin-top: 10px;
+}
+
+.section-details summary,
+.boundary-section > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 650;
+  list-style-position: outside;
+}
+
+.section-details summary:hover,
+.section-details summary:focus-visible,
+.boundary-section > summary:hover,
+.boundary-section > summary:focus-visible {
+  color: var(--ink);
 }
 
 .field-row {
@@ -859,15 +926,6 @@ label:focus-within {
 
 .field-meta {
   min-width: 0;
-}
-
-.field-id {
-  display: inline-block;
-  margin-right: 6px;
-  color: #858a80;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
 }
 
 .field-label {
@@ -915,6 +973,7 @@ label:focus-within {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  padding-top: 14px;
 }
 
 .boundary-field {
@@ -967,7 +1026,7 @@ label:focus-within {
 
 .change-count {
   color: var(--accent);
-  font-size: 22px;
+  font-size: 11px;
   font-weight: 650;
 }
 
@@ -1687,6 +1746,15 @@ label:focus-within {
     grid-template-columns: 1fr;
   }
 
+  .recipe-section,
+  .boundary-section {
+    padding: 16px;
+  }
+
+  .section-instruction textarea {
+    min-height: 78px;
+  }
+
   .field-control {
     grid-column: 1;
     grid-row: 2;
@@ -1703,6 +1771,10 @@ label:focus-within {
     grid-template-columns: 1fr 1fr;
     gap: 8px;
     border-radius: 18px;
+  }
+
+  .change-summary {
+    display: none;
   }
 
   .copy-actions {

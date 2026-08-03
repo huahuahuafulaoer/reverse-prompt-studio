@@ -158,27 +158,20 @@
 
             <div class="section-stack" id="sectionStack"></div>
 
-            <section class="boundary-section">
-              <div class="section-title-row">
-                <span class="section-code">Q</span>
-                <div>
-                  <h3>迁移与真值边界</h3>
-                  <p>决定保留什么，以及避免什么。</p>
-                </div>
-              </div>
+            <details class="boundary-section">
+              <summary>高级边界设置</summary>
               <div class="boundary-grid" id="boundaryGrid"></div>
-            </section>
+            </details>
           </div>
         </section>
       </main>
 
       <footer class="export-dock" id="exportDock" hidden>
         <div class="change-summary">
-          <span class="change-count" id="changeCount">0</span>
-          <span>处修改</span>
+          <span class="change-count" id="changeCount">暂无修改</span>
         </div>
         <button class="button button-rebuild" id="reviseButton" type="button">
-          重新生成
+          提交修改
         </button>
         <textarea id="compiledPrompt" hidden readonly></textarea>
         <div class="copy-actions">

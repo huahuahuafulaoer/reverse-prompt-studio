@@ -106,8 +106,12 @@ export function createStudioHttpServer({ service, store, publicDirectory, update
       }
 
       if (request.method === "POST" && url.pathname === "/api/revise") {
-        const { runId, recipe } = await readJson(request);
-        return sendJson(response, 200, await service.revise(runId, recipe));
+        const { runId, recipe, sectionInstructions } = await readJson(request);
+        return sendJson(
+          response,
+          200,
+          await service.revise(runId, recipe, sectionInstructions),
+        );
       }
       if (request.method === "POST" && url.pathname === "/api/product-match") {
         const { runId, recipe } = await readJson(request);
@@ -213,7 +217,7 @@ function errorStatus(error) {
   if (error?.code === "ENOENT" || /Candidate not found/i.test(error.message)) return 404;
   if (
     error instanceof SyntaxError
-    || /Unsupported image type|Invalid run id|too large|Image bytes are required|Unsupported workflow|Unsupported role|Unsupported transfer mode|replacementSubject|替换主体|not a brand-grade workflow|earliest failed gate|Finding not found/i.test(error.message)
+    || /Unsupported image type|Invalid run id|too large|Image bytes are required|Unsupported workflow|Unsupported role|Unsupported transfer mode|replacementSubject|替换主体|sectionInstructions|未知板块|重复板块|修改要求不能为空|锁定板块|not a brand-grade workflow|earliest failed gate|Finding not found/i.test(error.message)
   ) return 400;
   if (
     /Codex|JSON-RPC|Turn |structured agent message|schema must|gates must|earliestFailureGate|verdict must|lock drift cannot PASS/i.test(error.message)

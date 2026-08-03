@@ -45,11 +45,100 @@ export function collectFieldChanges(recipe) {
   const locked = [];
   for (const section of recipe.sections ?? []) {
     for (const field of section.fields ?? []) {
-      if (field.dirty) changed[field.id] = field.value;
+      if (field.dirty && !field.locked) changed[field.id] = field.value;
       if (field.locked) locked.push(field.id);
     }
   }
   return { changed, locked, changedPaths: Object.keys(recipe.editorChanges ?? {}) };
+}
+
+export function updateSectionInstruction(sectionInstructions, sectionId, instruction) {
+  return { ...(sectionInstructions ?? {}), [sectionId]: instruction };
+}
+
+export function setSectionRevisionLocked(
+  recipe,
+  sectionInstructions,
+  sectionId,
+  locked,
+) {
+  const nextRecipe = setSectionLocked(recipe, sectionId, locked);
+  if (locked) {
+    nextRecipe.sections = nextRecipe.sections.map((section) =>
+      section.id === sectionId
+        ? {
+            ...section,
+            fields: section.fields.map((field) => ({ ...field, dirty: false })),
+          }
+        : section);
+  }
+  const nextInstructions = { ...(sectionInstructions ?? {}) };
+  if (locked) delete nextInstructions[sectionId];
+  return { recipe: nextRecipe, sectionInstructions: nextInstructions };
+}
+
+export function buildRevisionPlan(recipe, sectionInstructions = {}) {
+  const sectionPayload = [];
+  const authorizedSectionIds = [];
+  let changedFieldCount = 0;
+  for (const section of recipe.sections ?? []) {
+    const locked = isSectionLocked(section);
+    const instruction = String(sectionInstructions[section.id] ?? "").trim();
+    const dirtyFields = (section.fields ?? []).filter((field) => field.dirty && !field.locked);
+    changedFieldCount += dirtyFields.length;
+    if (instruction && !locked) {
+      sectionPayload.push({ sectionId: section.id, instruction });
+    }
+    if (!locked && (instruction || dirtyFields.length)) authorizedSectionIds.push(section.id);
+  }
+  const changedPathCount = Object.keys(recipe.editorChanges ?? {}).length;
+  return {
+    sectionInstructions: sectionPayload,
+    authorizedSectionIds,
+    sectionCount: authorizedSectionIds.length,
+    totalChanges: sectionPayload.length + changedFieldCount + changedPathCount,
+  };
+}
+
+export function clearSubmittedSectionInstructions(sectionInstructions, submitted = []) {
+  const next = { ...(sectionInstructions ?? {}) };
+  for (const { sectionId } of submitted) delete next[sectionId];
+  return next;
+}
+
+export function sectionInstructionView(section, instruction = "", updated = false) {
+  const locked = isSectionLocked(section);
+  return {
+    label: "修改要求",
+    ariaLabel: `${section.label}修改要求`,
+    placeholder: instructionPlaceholder(section.id, section.label),
+    status: locked
+      ? "已锁定，不参与修改"
+      : updated
+        ? "已按要求更新"
+        : String(instruction).trim()
+          ? "已加入本次修改"
+          : "",
+    locked,
+  };
+}
+
+function instructionPlaceholder(sectionId, label) {
+  return {
+    M: "例如：整体更像一张克制的品牌海报",
+    S: "例如：人物更放松，服装换成浅色",
+    A: "例如：动作更自然，手部不要僵硬",
+    P: "例如：产品更突出，但不要放得太大",
+    C: "例如：主体向右一些，左侧留出更多空间",
+    K: "例如：视角再低一点，画面更有纵深",
+    L: "例如：让光线更柔和，阴影不要太重",
+    G: "例如：整体偏暖一些，降低蓝色饱和度",
+    E: "例如：背景更简洁，减少远处杂物",
+    R: "例如：材质更真实，减少塑料感",
+    T: "例如：不要生成文字，保留左上空白",
+    Q: "例如：保留主体特征，不要猜测品牌",
+    X: "例如：避免多余人物和变形的手指",
+  }[sectionId] ?? `例如：说明你希望${label}怎么调整`;
 }
 
 export function updateRecipeList(recipe, fieldPath, value) {
