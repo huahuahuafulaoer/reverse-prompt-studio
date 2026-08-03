@@ -16,7 +16,7 @@
         </a>
         <div class="connection" id="connectionStatus">
           <span class="connection-dot" aria-hidden="true"></span>
-          <span>连接 Codex</span>
+          <span>连接中</span>
         </div>
       </header>
 
@@ -190,9 +190,7 @@
 
       <main class="finish-workspace" data-workspace="brand-grade" hidden>
         <header class="finish-heading">
-          <span class="eyebrow">DELIVERY IMAGE → QC LOOP</span>
-          <h1>从最早失守处，<br />把成图修到可交付。</h1>
-          <p>按真实性、艺术指导、品牌目标和生产完成度依次诊断。修复在 Flow 或其他编辑器中执行。</p>
+          <h1>检查成图，修到可交付。</h1>
         </header>
 
         <section class="finish-source">
@@ -211,13 +209,6 @@
         </section>
 
         <section id="finish-brief" class="finish-brief" hidden>
-          <div class="finish-section-heading">
-            <div>
-              <span class="eyebrow">MINIMUM BRIEF</span>
-              <h2>补齐判断所需的最小信息</h2>
-            </div>
-            <span>不确定的内容会进入 HOLD</span>
-          </div>
           <div class="brief-grid">
             <label>渠道<input name="channel" placeholder="如 PDP / 社媒 / 海报" /></label>
             <label>受众<input name="audience" placeholder="核心观看者" /></label>
@@ -228,7 +219,7 @@
           <div id="evidence-list" class="evidence-list"></div>
           <div class="finish-brief__actions">
             <button id="add-evidence" type="button" class="button button--ghost">
-              添加真值 / 参考图
+              添加参考图
             </button>
             <button id="finish-analyze" type="button" class="button button--primary">
               开始品牌级诊断
@@ -238,17 +229,12 @@
 
         <section id="finish-progress" class="finish-progress" hidden aria-live="polite">
           <span class="finish-progress__orb" aria-hidden="true"></span>
-          <strong id="finish-progress-title">正在检查真实性与物理关系</strong>
-          <small>Codex 正在按顺序检查四个质量门槛</small>
+          <strong id="finish-progress-title">检查真实感</strong>
         </section>
 
         <section id="finish-results" class="finish-results" hidden>
-          <div class="finish-section-heading">
-            <div>
-              <span class="eyebrow">SEQUENTIAL GATES</span>
-              <h2>当前诊断</h2>
-            </div>
-            <span>只处理最早 FAIL，否则最早 HOLD</span>
+          <div class="finish-section-heading finish-section-heading--compact">
+            <h2 id="finish-result-title">检查结果</h2>
           </div>
           <ol id="gate-rail" class="gate-rail"></ol>
           <div id="finding-list" class="finding-list"></div>
@@ -256,12 +242,9 @@
 
         <section id="candidate-panel" class="candidate-panel" hidden>
           <div class="finish-section-heading">
-            <div>
-              <span class="eyebrow">CANDIDATE QC</span>
-              <h2>导回外部修复结果</h2>
-            </div>
+            <h2>导入修复图</h2>
             <label class="button button--ghost candidate-upload">
-              导入修复结果
+              选择修复图
               <input
                 id="candidate-input"
                 class="finish-file-input"
@@ -272,7 +255,7 @@
           </div>
           <div id="candidate-comparison" class="candidate-comparison"></div>
           <div class="candidate-actions">
-            <p id="candidate-status">候选图会同时检查四层质量和锁定漂移。</p>
+            <p id="candidate-status">导入修复图后，会判断是否可以交付。</p>
             <button id="approve-candidate" type="button" class="button button--primary" disabled>
               批准为交付源图
             </button>
@@ -283,10 +266,9 @@
       <aside id="repair-bar" class="repair-bar" hidden>
         <div>
           <strong id="repair-title"></strong>
-          <small id="repair-summary"></small>
         </div>
         <button id="copy-repair-contract" type="button" class="button button--primary">
-          复制 Flow 修复指令
+          复制修复指令
         </button>
       </aside>
     </div>

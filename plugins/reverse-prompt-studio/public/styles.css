@@ -1024,22 +1024,14 @@ label:focus-within {
 
 .finish-heading {
   max-width: 760px;
-  padding: 44px 4px 32px;
+  padding: 30px 4px 20px;
 }
 
 .finish-heading h1 {
-  margin: 14px 0 12px;
-  font-size: clamp(38px, 6vw, 72px);
-  line-height: 0.98;
-  letter-spacing: -0.06em;
-}
-
-.finish-heading p {
-  max-width: 620px;
   margin: 0;
-  color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: clamp(34px, 5vw, 58px);
+  line-height: 1;
+  letter-spacing: -0.06em;
 }
 
 .finish-source,
@@ -1059,7 +1051,7 @@ label:focus-within {
 
 .finish-dropzone {
   position: relative;
-  min-height: 360px;
+  min-height: 300px;
   display: grid;
   place-items: center;
   align-content: center;
@@ -1127,7 +1119,7 @@ label:focus-within {
 .finish-brief,
 .finish-results,
 .candidate-panel {
-  padding: 24px;
+  padding: 20px;
 }
 
 .finish-section-heading {
@@ -1139,9 +1131,13 @@ label:focus-within {
 }
 
 .finish-section-heading h2 {
-  margin: 6px 0 0;
+  margin: 0;
   font-size: 24px;
   letter-spacing: -0.04em;
+}
+
+.finish-section-heading--compact {
+  margin-bottom: 14px;
 }
 
 .finish-section-heading > span {
@@ -1251,7 +1247,7 @@ label:focus-within {
 }
 
 .finish-progress {
-  min-height: 300px;
+  min-height: 240px;
   display: grid;
   place-items: center;
   align-content: center;
@@ -1261,10 +1257,6 @@ label:focus-within {
   border-radius: var(--radius-lg);
   text-align: center;
   background: var(--surface);
-}
-
-.finish-progress small {
-  color: var(--ink-soft);
 }
 
 .finish-progress__orb {
@@ -1286,7 +1278,7 @@ label:focus-within {
 }
 
 .gate-rail__item {
-  min-height: 112px;
+  min-height: 82px;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -1299,19 +1291,18 @@ label:focus-within {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-.gate-rail__item[data-tone="pass"] { --gate-color: #2f9e67; }
-.gate-rail__item[data-tone="hold"] { --gate-color: #a96e00; }
-.gate-rail__item[data-tone="fail"] { --gate-color: #d45151; }
+.gate-rail__item[data-tone="positive"] { --gate-color: #2f9e67; }
+.gate-rail__item[data-tone="caution"] { --gate-color: #a96e00; }
+.gate-rail__item[data-tone="critical"] { --gate-color: #d45151; }
 
 .gate-rail__top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
   margin-bottom: 14px;
 }
 
-.gate-rail__id,
 .gate-rail__status {
   color: var(--gate-color);
   font-size: 9px;
@@ -1335,7 +1326,7 @@ label:focus-within {
   display: grid;
   gap: 8px;
   margin-top: 12px;
-  padding-bottom: 112px;
+  padding-bottom: 0;
 }
 
 .finding-card {
@@ -1352,16 +1343,6 @@ label:focus-within {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.finding-card__severity {
-  padding: 3px 6px;
-  border-radius: 999px;
-  color: #9f3535;
-  background: #ffe6e2;
-  font-size: 8px;
-  font-weight: 750;
-  text-transform: uppercase;
 }
 
 .finding-card__evidence,
@@ -1414,16 +1395,10 @@ label:focus-within {
   gap: 3px;
 }
 
-.repair-bar strong,
-.repair-bar small {
+.repair-bar strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.repair-bar small {
-  color: #bec1ba;
-  font-size: 9px;
 }
 
 .candidate-upload {
@@ -1466,35 +1441,36 @@ label:focus-within {
   font-size: 9px;
 }
 
-.comparison-qc {
+.comparison-result {
   display: grid;
-  align-content: start;
-  gap: 10px;
-}
-
-.comparison-rail,
-.lock-drift-list {
-  display: grid;
+  align-content: center;
   gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.comparison-rail li,
-.lock-drift-list li {
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  color: var(--ink-soft);
+  min-height: 128px;
+  padding: 18px;
+  border-radius: 14px;
   background: var(--canvas);
-  font-size: 9px;
 }
 
-.comparison-rail li[data-tone="pass"] { color: #23794d; }
-.comparison-rail li[data-tone="hold"] { color: #8d6200; }
-.comparison-rail li[data-tone="fail"],
-.lock-drift-list li[data-status="FAIL"] { color: #a63f3f; }
+.comparison-result[data-tone="positive"] {
+  color: #23794d;
+  background: #e9f8ef;
+}
+
+.comparison-result[data-tone="critical"] {
+  color: #8d3535;
+  background: #fff0ed;
+}
+
+.comparison-result__title {
+  font-size: 18px;
+}
+
+.comparison-result__reason {
+  margin: 0;
+  color: currentColor;
+  font-size: 11px;
+  line-height: 1.55;
+}
 
 .candidate-actions p {
   margin: 0 auto 0 0;
@@ -1539,10 +1515,6 @@ label:focus-within {
 
   .evidence-row > label:first-child {
     grid-column: 1 / -1;
-  }
-
-  .finding-list {
-    padding-bottom: 170px;
   }
 
   .finding-card {

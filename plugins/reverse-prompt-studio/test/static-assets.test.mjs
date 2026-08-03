@@ -128,6 +128,25 @@ test("brand grade workbench exposes the required controls", async () => {
   assert.match(html, /id="approve-candidate"/);
 });
 
+test("brand grade markup and render paths omit backend-facing language", async () => {
+  const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+  const css = await readFile(path.join(projectDirectory, "public/styles.css"), "utf8");
+  const brandMarkup = html.slice(html.indexOf('<main class="finish-workspace"'), html.indexOf("</main>", html.indexOf('<main class="finish-workspace"')));
+  const brandRender = script.slice(script.indexOf("function renderGateRail"), script.indexOf("function setFinishBusy"));
+
+  assert.doesNotMatch(brandMarkup, /DELIVERY IMAGE|MINIMUM BRIEF|SEQUENTIAL GATES|CANDIDATE QC|FAIL|HOLD|PASS|四层|质量门槛|最早失守/);
+  assert.doesNotMatch(brandRender, /changePaths\.join|drift\.path|comparison\.verdict|锁定路径|四层 PASS/);
+  assert.doesNotMatch(brandRender, /showToast\(error\.message\)/);
+  assert.match(brandMarkup, /id="finish-result-title"/);
+  assert.match(html, />\s*复制修复指令\s*</);
+  assert.doesNotMatch(`${html}\n${script}`, /Codex App Server/);
+  assert.match(css, /\.finding-list\s*\{[^}]*padding-bottom:\s*0;/s);
+  assert.match(css, /gate-rail__item\[data-tone="positive"\]/);
+  assert.match(css, /gate-rail__item\[data-tone="caution"\]/);
+  assert.match(css, /gate-rail__item\[data-tone="critical"\]/);
+});
+
 test("creating a repair contract leaves the candidate panel in its QC-ready state", async () => {
   const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
   const selectFinding = script.slice(
@@ -136,6 +155,6 @@ test("creating a repair contract leaves the candidate panel in its QC-ready stat
   );
   assert.match(
     selectFinding,
-    /candidateStatus\.textContent = "候选图会同时检查四层质量和锁定漂移。"/,
+    /candidateStatus\.textContent = "导入修复图后，会判断是否可以交付。"/,
   );
 });
