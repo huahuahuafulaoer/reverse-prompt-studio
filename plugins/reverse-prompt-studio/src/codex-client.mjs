@@ -30,7 +30,7 @@ export class CodexAppServer extends EventEmitter {
       clientInfo: {
         name: "reverse_prompt_studio",
         title: "Reverse Prompt Studio",
-        version: "0.3.0",
+        version: "0.4.0",
       },
     });
     connection.notify("initialized", {});
@@ -63,12 +63,30 @@ const stringArraySchema = {
   items: { type: "string" },
 };
 
+const contentAnchorSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["value", "preserve", "sourceRole"],
+  properties: {
+    value: { type: "string" },
+    preserve: { type: "boolean" },
+    sourceRole: {
+      type: "string",
+      enum: ["content_reference", "user_or_project_truth", "not_applicable"],
+    },
+  },
+};
+
+const transferModes = new Set(["content_fidelity", "style_composition", "subject_swap"]);
+
 export const editorRecipeSchema = {
   type: "object",
   additionalProperties: false,
   required: [
     "schema",
     "title",
+    "transferMode",
+    "contentAnchors",
     "sections",
     "referenceTransfer",
     "truthGaps",
@@ -77,6 +95,21 @@ export const editorRecipeSchema = {
   properties: {
     schema: { type: "string", const: "reverse-image-prompt/editor-v1" },
     title: { type: "string" },
+    transferMode: {
+      type: "string",
+      enum: ["content_fidelity", "style_composition", "subject_swap"],
+    },
+    contentAnchors: {
+      type: "object",
+      additionalProperties: false,
+      required: ["subject", "action", "interaction", "scene"],
+      properties: {
+        subject: contentAnchorSchema,
+        action: contentAnchorSchema,
+        interaction: contentAnchorSchema,
+        scene: contentAnchorSchema,
+      },
+    },
     sections: {
       type: "array",
       items: {
@@ -131,18 +164,27 @@ export function createAnalyzeTurnParams({
   imagePath,
   productImagePath,
   skillPath,
+  transferMode = "content_fidelity",
+  replacementSubject = "",
 }) {
+  if (!transferModes.has(transferMode)) throw new Error(`Unsupported transfer mode: ${transferMode}`);
+  const replacement = String(replacementSubject ?? "").trim();
+  if (transferMode === "subject_swap" && !replacement) {
+    throw new Error("subject_swap requires a replacementSubject（替换主体）");
+  }
+  const modeContract = createModeContract(transferMode, replacement);
   const input = [
     {
       type: "text",
       text: [
         "$reverse-engineering-image-prompts 分析这张参考图。",
-        "下面第一张图片的唯一主角色是 inspiration_only；允许提取的线索维度仅限构图、光影、色彩、环境和可迁移风格关系。",
+        modeContract,
         "直接检查图片，只根据可见证据推导可迁移视觉配方。",
         productImagePath
           ? "另有一张明确标注的产品图；它只负责产品真值，不得接管参考图的构图、场景或风格。"
           : "产品结构或身份没有可靠真值时，必须写入 truthGaps，不要凭外观补全。",
         "把结果写入唯一的 reverse-image-prompt/editor-v1 结构化状态。",
+        `transferMode 必须原样返回为 ${transferMode}，并完整填写固定 contentAnchors。`,
         "初次分析的所有字段都设为 locked=false；锁定只由用户之后在界面中操作。",
         "字段 ID 在后续修改中必须保持稳定。不要输出额外 prose prompt。",
       ].join("\n"),
@@ -177,6 +219,31 @@ export function createAnalyzeTurnParams({
     input,
     outputSchema: editorRecipeSchema,
   };
+}
+
+function createModeContract(transferMode, replacementSubject) {
+  if (transferMode === "style_composition") {
+    return [
+      "transferMode 是 style_composition。下面第一张图片的唯一主角色是 inspiration_only；允许提取的线索维度仅限构图、光影、色彩、环境和可迁移风格关系。",
+      "保持旧的风格构图迁移合同：允许更换主体和叙事；不要复制原主体组合、身份、品牌、原文字或独特叙事。",
+      "contentAnchors 四项都使用 preserve=false、sourceRole=not_applicable；value 可为空字符串。",
+    ].join("\n");
+  }
+  if (transferMode === "subject_swap") {
+    return [
+      "transferMode 是 subject_swap。下面第一张图片的唯一主角色是 content_reference。",
+      `替换主体“${replacementSubject}”是 user_or_project_truth；contentAnchors.subject 必须逐字写入该值，preserve=true，sourceRole=user_or_project_truth。`,
+      "原图只控制构图、动作与交互关系（按新主体做物理合理转译）、场景、光影、色彩和风格；不得保留原主体身份。",
+      "action、interaction、scene 锚点来自 content_reference；排除人物身份、logo、原文字、精确地点轮廓、受保护字形，以及无法确认的器材品牌、型号、工程或安全功能。",
+    ].join("\n");
+  }
+  return [
+    "transferMode 是 content_fidelity，职责近似 near_recreation / content reference。下面第一张图片的唯一主角色是 content_reference。",
+    "正向保留通用主体类别、人数、动作、交互关系、场景类别、构图位置与尺度、光影和色彩；S（主体）和 A（动作）板块必须存在且包含非空字段。",
+    "contentAnchors 的 subject、action、interaction、scene 必须依据可见证据填写，全部 preserve=true、sourceRole=content_reference，并作为正向生成锚点。",
+    "不得把通用主体或动作放进 omit 或 negativeConstraints；至少一条 negativeConstraints 必须明确点名并排除同类场景但主动作不同的活动，另一条必须明确点名并排除姿态或器材相似但职业、任务或用途不同的内容；其他条目只处理姿态、物理和常见生成失败。",
+    "排除人物身份、品牌/logo、原文字、精确地点轮廓、受保护字形，以及无法确认的器材品牌、型号、工程或安全功能。",
+  ].join("\n");
 }
 
 export function createProductMatchTurnParams({

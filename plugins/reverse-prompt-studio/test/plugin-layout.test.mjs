@@ -22,7 +22,7 @@ test("the marketplace points to a self-contained Reverse Prompt Studio plugin", 
   );
 
   assert.equal(manifest.name, "reverse-prompt-studio");
-  assert.equal(manifest.version, "0.3.0");
+  assert.equal(manifest.version, "0.4.0");
   assert.equal(packageMetadata.version, manifest.version);
   assert.equal(manifest.repository, "https://github.com/huahuahuafulaoer/reverse-prompt-studio");
   assert.equal(manifest.skills, "./skills/");
@@ -55,4 +55,40 @@ test("published text and runtime code do not contain the developer's absolute ho
     const contents = await readFile(path.join(pluginRoot, relativePath), "utf8");
     assert.doesNotMatch(contents, /\/Users\/bjb03268/);
   }
+});
+
+test("bundles the brand grade finishing skill", async () => {
+  await readFile(path.join(pluginRoot, "skills/brand-grade-finishing/SKILL.md"));
+  await readFile(
+    path.join(pluginRoot, "skills/brand-grade-finishing/references/output-contract.md"),
+  );
+});
+
+test("declares the brand-grade 0.4 release across runtime metadata", async () => {
+  const packageMetadata = JSON.parse(
+    await readFile(path.join(pluginRoot, "package.json"), "utf8"),
+  );
+  const manifest = JSON.parse(
+    await readFile(path.join(pluginRoot, ".codex-plugin/plugin.json"), "utf8"),
+  );
+  const marketplacePackage = JSON.parse(
+    await readFile(path.join(marketplaceRoot, "package.json"), "utf8"),
+  );
+  const readme = await readFile(path.join(pluginRoot, "README.md"), "utf8");
+  const codexClient = await readFile(path.join(pluginRoot, "src/codex-client.mjs"), "utf8");
+
+  assert.equal(packageMetadata.version, "0.4.0");
+  assert.equal(manifest.version, "0.4.0");
+  assert.equal(marketplacePackage.version, "0.4.0");
+  assert.match(codexClient, /version: "0\.4\.0"/);
+  for (const source of [
+    "src/brand-grade-schema.mjs",
+    "src/brand-grade-prompts.mjs",
+    "src/repair-contract.mjs",
+    "public/finish-state.js",
+  ]) {
+    assert.match(packageMetadata.scripts.check, new RegExp(source.replace(".", "\\.")));
+  }
+  assert.match(readme, /品牌级精修/);
+  assert.match(readme, /不包含工具内直接出修复图/);
 });

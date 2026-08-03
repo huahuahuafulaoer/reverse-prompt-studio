@@ -61,3 +61,104 @@ test("RunStore saves a role-specific product image beside the reference image", 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("RunStore persists a complete brand-grade run lifecycle", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "brand-grade-store-"));
+  const store = new RunStore(root);
+
+  try {
+    const created = await store.createRun({
+      bytes: Buffer.from("source"),
+      contentType: "image/png",
+      workflow: "brand_grade",
+    });
+    const input = await store.addRoleImage(created.id, {
+      bytes: Buffer.from("truth"),
+      contentType: "image/jpeg",
+      role: "product_truth",
+    });
+    assert.equal(input.role, "product_truth");
+    assert.match(path.basename(input.filename), /^[0-9a-f-]{36}\.jpg$/i);
+
+    await store.saveBrandGradeAudit(created.id, {
+      schema: "brand-grade-audit/v1",
+      sourceVersionId: "source-v1",
+    });
+    await store.saveRepairContract(created.id, {
+      schema: "brand-grade-repair-contract/v1",
+      findingId: "G1-F01",
+    });
+    const candidate = await store.addCandidate(created.id, {
+      bytes: Buffer.from("candidate"),
+      contentType: "image/png",
+    });
+    await store.saveComparison(created.id, candidate.id, {
+      schema: "brand-grade-comparison/v1",
+      candidateVersionId: candidate.id,
+      verdict: "PASS",
+      allowedUse: "approved_source",
+      lockDrift: [],
+    });
+    await store.approveCandidate(created.id, candidate.id);
+
+    const run = await store.loadRun(created.id);
+    assert.equal(run.workflow, "brand_grade");
+    assert.equal(run.inputs[0].role, "product_truth");
+    assert.equal(run.approvedCandidateId, candidate.id);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("RunStore rejects unsupported brand-grade input roles", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "brand-grade-role-store-"));
+  const store = new RunStore(root);
+
+  try {
+    const created = await store.createRun({
+      bytes: Buffer.from("source"),
+      contentType: "image/png",
+      workflow: "brand_grade",
+    });
+    await assert.rejects(
+      () => store.addRoleImage(created.id, {
+        bytes: Buffer.from("x"),
+        contentType: "image/png",
+        role: "inspiration_only",
+      }),
+      /role/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("RunStore refuses approval when a locked path drifted", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "brand-grade-lock-store-"));
+  const store = new RunStore(root);
+
+  try {
+    const created = await store.createRun({
+      bytes: Buffer.from("source"),
+      contentType: "image/png",
+      workflow: "brand_grade",
+    });
+    const candidate = await store.addCandidate(created.id, {
+      bytes: Buffer.from("candidate"),
+      contentType: "image/png",
+    });
+    await store.saveComparison(created.id, candidate.id, {
+      schema: "brand-grade-comparison/v1",
+      candidateVersionId: candidate.id,
+      verdict: "PASS",
+      allowedUse: "approved_source",
+      lockDrift: [{ path: "M.subject", expected: "原产品", observed: "已变化", status: "FAIL" }],
+    });
+    await assert.rejects(
+      () => store.approveCandidate(created.id, candidate.id),
+      /lock drift/i,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

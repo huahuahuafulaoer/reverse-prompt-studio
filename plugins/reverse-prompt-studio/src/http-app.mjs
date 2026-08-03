@@ -98,17 +98,100 @@ export function createStudioHttpServer({ service, store, publicDirectory, update
       }
 
       if (request.method === "POST" && url.pathname === "/api/analyze") {
-        const { runId } = await readJson(request);
-        return sendJson(response, 200, await service.analyze(runId));
+        const { runId, transferMode, replacementSubject } = await readJson(request);
+        return sendJson(response, 200, await service.analyze(runId, {
+          transferMode,
+          replacementSubject,
+        }));
       }
 
       if (request.method === "POST" && url.pathname === "/api/revise") {
-        const { runId, recipe } = await readJson(request);
-        return sendJson(response, 200, await service.revise(runId, recipe));
+        const { runId, recipe, sectionInstructions } = await readJson(request);
+        return sendJson(
+          response,
+          200,
+          await service.revise(runId, recipe, sectionInstructions),
+        );
       }
       if (request.method === "POST" && url.pathname === "/api/product-match") {
         const { runId, recipe } = await readJson(request);
         return sendJson(response, 200, await service.matchProduct(runId, recipe));
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/brand-grade/runs") {
+        const run = await store.createRun({
+          bytes: await readBody(request),
+          contentType: request.headers["content-type"],
+          workflow: "brand_grade",
+        });
+        return sendJson(response, 201, {
+          id: run.id,
+          workflow: run.workflow,
+          sourceVersionId: run.sourceVersionId,
+        });
+      }
+
+      const inputMatch = url.pathname.match(
+        /^\/api\/brand-grade\/runs\/([0-9a-f-]{36})\/inputs$/i,
+      );
+      if (request.method === "POST" && inputMatch) {
+        const input = await store.addRoleImage(inputMatch[1], {
+          bytes: await readBody(request),
+          contentType: request.headers["content-type"],
+          role: url.searchParams.get("role"),
+        });
+        return sendJson(response, 201, input);
+      }
+
+      const auditMatch = url.pathname.match(
+        /^\/api\/brand-grade\/runs\/([0-9a-f-]{36})\/audit$/i,
+      );
+      if (request.method === "POST" && auditMatch) {
+        return sendJson(response, 200, await service.auditBrandGrade({
+          runId: auditMatch[1],
+          brief: await readJson(request),
+        }));
+      }
+
+      const contractMatch = url.pathname.match(
+        /^\/api\/brand-grade\/runs\/([0-9a-f-]{36})\/contracts$/i,
+      );
+      if (request.method === "POST" && contractMatch) {
+        const { findingId } = await readJson(request);
+        return sendJson(response, 201, await service.createBrandGradeRepairContract({
+          runId: contractMatch[1],
+          findingId,
+        }));
+      }
+
+      const candidateMatch = url.pathname.match(
+        /^\/api\/brand-grade\/runs\/([0-9a-f-]{36})\/candidates$/i,
+      );
+      if (request.method === "POST" && candidateMatch) {
+        return sendJson(response, 201, await store.addCandidate(candidateMatch[1], {
+          bytes: await readBody(request),
+          contentType: request.headers["content-type"],
+        }));
+      }
+
+      const compareMatch = url.pathname.match(
+        /^\/api\/brand-grade\/runs\/([0-9a-f-]{36})\/candidates\/([0-9a-f-]{36})\/compare$/i,
+      );
+      if (request.method === "POST" && compareMatch) {
+        return sendJson(response, 200, await service.compareBrandGradeCandidate({
+          runId: compareMatch[1],
+          candidateId: compareMatch[2],
+        }));
+      }
+
+      const approveMatch = url.pathname.match(
+        /^\/api\/brand-grade\/runs\/([0-9a-f-]{36})\/candidates\/([0-9a-f-]{36})\/approve$/i,
+      );
+      if (request.method === "POST" && approveMatch) {
+        return sendJson(response, 200, await service.approveBrandGradeCandidate({
+          runId: approveMatch[1],
+          candidateId: approveMatch[2],
+        }));
       }
 
       if (request.method === "GET") {
@@ -117,9 +200,7 @@ export function createStudioHttpServer({ service, store, publicDirectory, update
 
       sendJson(response, 404, { error: "Not found" });
     } catch (error) {
-      const status = /Unsupported image type|Invalid run id|too large/i.test(error.message)
-        ? 400
-        : 500;
+      const status = errorStatus(error);
       sendJson(response, status, { error: error.message });
     }
   });
@@ -130,6 +211,18 @@ export function createStudioHttpServer({ service, store, publicDirectory, update
     clients.clear();
   });
   return server;
+}
+
+function errorStatus(error) {
+  if (error?.code === "ENOENT" || /Candidate not found/i.test(error.message)) return 404;
+  if (
+    error instanceof SyntaxError
+    || /Unsupported image type|Invalid run id|too large|Image bytes are required|Unsupported workflow|Unsupported role|Unsupported transfer mode|replacementSubject|替换主体|sectionInstructions|未知板块|重复板块|修改要求不能为空|锁定板块|not a brand-grade workflow|earliest failed gate|Finding not found/i.test(error.message)
+  ) return 400;
+  if (
+    /Codex|JSON-RPC|Turn |structured agent message|schema must|gates must|earliestFailureGate|verdict must|lock drift cannot PASS/i.test(error.message)
+  ) return 502;
+  return 500;
 }
 
 async function readJson(request) {

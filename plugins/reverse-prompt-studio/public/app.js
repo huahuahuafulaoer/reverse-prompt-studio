@@ -1,20 +1,30 @@
 import {
-  collectFieldChanges,
+  buildRevisionPlan,
+  clearSubmittedSectionInstructions,
   formatElapsedTime,
   isSectionLocked,
   normalizeSectionLocks,
   progressForCodexEvent,
   productStatusLabel,
   restoreLockedSections,
-  setSectionLocked,
+  sectionInstructionView,
+  setSectionRevisionLocked,
   updateEditorField,
   updateRecipeList,
+  updateSectionInstruction,
 } from "/editor-state.js";
 import {
   UPDATE_DISMISS_KEY,
   shouldShowUpdate,
   updateCommandText,
 } from "/update-state.js";
+import {
+  canApproveCandidate,
+  friendlyFinishError,
+  presentAudit,
+  presentComparison,
+  repairActionState,
+} from "/finish-state.js";
 
 const ANALYSIS_STEPS = ["本地图片", "Codex 接收", "视觉拆解", "生成字段"];
 
@@ -27,10 +37,43 @@ const state = {
   productPreviewUrl: null,
   hasProduct: false,
   productApplied: false,
+  transferMode: "content_fidelity",
+  replacementSubject: "",
+  sectionInstructions: {},
+  updatedSectionIds: [],
   analysisStartedAt: null,
   analysisTimer: null,
   update: null,
 };
+
+const finish = {
+  runId: null,
+  sourceFile: null,
+  sourcePreviewUrl: null,
+  audit: null,
+  selectedFinding: null,
+  contract: null,
+  candidateId: null,
+  candidatePreviewUrl: null,
+  comparison: null,
+  progressTimer: null,
+};
+
+const finishProgressMessages = [
+  "检查真实感",
+  "检查画面表现",
+  "检查品牌表达",
+  "检查交付细节",
+];
+
+const finishEvidenceRoles = [
+  ["product_truth", "产品真值"],
+  ["subject_reference", "人物 / 主体真值"],
+  ["style_reference", "风格参考"],
+  ["composition_reference", "构图参考"],
+  ["material_reference", "材质参考"],
+  ["hard_structure_reference", "硬结构参考"],
+];
 
 const elements = {
   connectionStatus: document.querySelector("#connectionStatus"),
@@ -44,6 +87,9 @@ const elements = {
   dropEmpty: document.querySelector("#dropEmpty"),
   sourcePreview: document.querySelector("#sourcePreview"),
   replaceHint: document.querySelector("#replaceHint"),
+  transferMode: document.querySelector("#transferMode"),
+  replacementSubjectField: document.querySelector("#replacementSubjectField"),
+  replacementSubject: document.querySelector("#replacementSubject"),
   productInputCard: document.querySelector("#productInputCard"),
   productInput: document.querySelector("#productInput"),
   productPlaceholder: document.querySelector("#productPlaceholder"),
@@ -71,6 +117,32 @@ const elements = {
   toast: document.querySelector("#toast"),
 };
 
+const finishElements = {
+  modeButtons: [...document.querySelectorAll("[data-mode]")],
+  workspaces: [...document.querySelectorAll("[data-workspace]")],
+  sourceInput: document.querySelector("#finish-source-input"),
+  dropzone: document.querySelector("#finish-dropzone"),
+  sourcePreview: document.querySelector("#finish-source-preview"),
+  brief: document.querySelector("#finish-brief"),
+  evidenceList: document.querySelector("#evidence-list"),
+  addEvidence: document.querySelector("#add-evidence"),
+  analyze: document.querySelector("#finish-analyze"),
+  progress: document.querySelector("#finish-progress"),
+  progressTitle: document.querySelector("#finish-progress-title"),
+  results: document.querySelector("#finish-results"),
+  resultTitle: document.querySelector("#finish-result-title"),
+  gateRail: document.querySelector("#gate-rail"),
+  findingList: document.querySelector("#finding-list"),
+  repairBar: document.querySelector("#repair-bar"),
+  repairTitle: document.querySelector("#repair-title"),
+  copyContract: document.querySelector("#copy-repair-contract"),
+  candidatePanel: document.querySelector("#candidate-panel"),
+  candidateInput: document.querySelector("#candidate-input"),
+  candidateComparison: document.querySelector("#candidate-comparison"),
+  candidateStatus: document.querySelector("#candidate-status"),
+  approveCandidate: document.querySelector("#approve-candidate"),
+};
+
 elements.imageInput.addEventListener("change", () => {
   const [file] = elements.imageInput.files;
   if (file) acceptImage(file);
@@ -79,6 +151,18 @@ elements.imageInput.addEventListener("change", () => {
 elements.productInput.addEventListener("change", () => {
   const [file] = elements.productInput.files;
   if (file) acceptProductImage(file);
+});
+
+elements.transferMode.addEventListener("change", () => {
+  state.transferMode = elements.transferMode.value;
+  syncTransferModeControls();
+  persistLocalState();
+});
+
+elements.replacementSubject.addEventListener("input", () => {
+  state.replacementSubject = elements.replacementSubject.value;
+  syncTransferModeControls();
+  persistLocalState();
 });
 
 for (const eventName of ["dragenter", "dragover"]) {
@@ -109,7 +193,8 @@ window.addEventListener("paste", (event) => {
   const file = item?.getAsFile();
   if (file) {
     event.preventDefault();
-    acceptImage(file);
+    if (activeWorkspace() === "brand-grade") uploadFinishSource(file);
+    else acceptImage(file);
   }
 });
 
@@ -138,7 +223,9 @@ eventSource.addEventListener("codex", (event) => {
 eventSource.onerror = () => setConnection(false);
 
 restoreLocalState();
+syncTransferModeControls();
 checkForUpdates();
+initializeFinishWorkbench();
 
 async function checkForUpdates() {
   try {
@@ -318,6 +405,10 @@ function restoreProductPreview(previousProductState) {
 
 async function analyzeImage() {
   if (!state.runId || state.busy) return;
+  if (state.transferMode === "subject_swap" && !state.replacementSubject.trim()) {
+    elements.replacementSubject.focus();
+    return showToast("请填写替换主体");
+  }
   setBusy(true, "Codex 正在分析");
   startAnalysisExperience({
     label: "正在联系 Codex",
@@ -327,7 +418,11 @@ async function analyzeImage() {
     const result = await fetchJson("/api/analyze", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runId: state.runId }),
+      body: JSON.stringify({
+        runId: state.runId,
+        transferMode: state.transferMode,
+        replacementSubject: state.replacementSubject,
+      }),
     });
     applyResult(result);
     if (state.hasProduct) state.productApplied = true;
@@ -347,24 +442,32 @@ async function analyzeImage() {
 
 async function reviseRecipe() {
   if (!state.runId || !state.recipe || state.busy) return;
-  const changes = collectFieldChanges(state.recipe);
-  const totalChanges = Object.keys(changes.changed).length + changes.changedPaths.length;
-  if (!totalChanges) return showToast("还没有需要重新梳理的修改");
+  const plan = buildRevisionPlan(state.recipe, state.sectionInstructions);
+  if (!plan.totalChanges) return showToast("请先写下想修改的内容");
 
-  setBusy(true, "Codex 正在重新梳理");
+  setBusy(true, "正在按要求修改");
   const lockedSectionIds = state.recipe.sections
     .filter((section) => isSectionLocked(section))
     .map((section) => section.id);
   startAnalysisExperience({
-    label: "正在提交修改",
-    detail: "Codex 会在同一个任务里重新组织提示词",
+    label: "正在按要求修改",
+    detail: "会合并本次填写的全部板块",
   });
   try {
     const result = await fetchJson("/api/revise", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runId: state.runId, recipe: state.recipe }),
+      body: JSON.stringify({
+        runId: state.runId,
+        recipe: state.recipe,
+        sectionInstructions: plan.sectionInstructions,
+      }),
     });
+    state.sectionInstructions = clearSubmittedSectionInstructions(
+      state.sectionInstructions,
+      plan.sectionInstructions,
+    );
+    state.updatedSectionIds = plan.authorizedSectionIds;
     applyResult(result, lockedSectionIds);
     showToast("新的视觉配方已生成");
     finishAnalysisExperience({
@@ -437,15 +540,22 @@ function renderRecipe() {
     const heading = document.createElement("div");
     heading.className = "section-title-row";
     heading.append(
-      createTextElement("span", "section-code", section.id),
-      createHeadingCopy(section.label, `${section.fields.length} 个可编辑字段`),
+      createHeadingCopy(section.label),
       createSectionLockButton(section, container),
     );
 
+    const instructionControl = createSectionInstructionControl(section);
+    const details = document.createElement("details");
+    details.className = "section-details";
+    const summary = document.createElement("summary");
+    summary.textContent = "查看详细参数";
     const fieldList = document.createElement("div");
     fieldList.className = "field-list";
-    for (const field of section.fields) fieldList.append(createFieldRow(field));
-    container.append(heading, fieldList);
+    for (const field of section.fields) {
+      fieldList.append(createFieldRow(field, isSectionLocked(section)));
+    }
+    details.append(summary, fieldList);
+    container.append(heading, instructionControl, details);
     elements.sectionStack.append(container);
   }
 
@@ -454,7 +564,46 @@ function renderRecipe() {
   syncProductControls();
 }
 
-function createFieldRow(field) {
+function createSectionInstructionControl(section) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "section-instruction";
+  const textareaId = `section-instruction-${section.id}`;
+  const label = document.createElement("label");
+  label.htmlFor = textareaId;
+  const currentInstruction = state.sectionInstructions[section.id] ?? "";
+  const view = sectionInstructionView(
+    section,
+    currentInstruction,
+    state.updatedSectionIds.includes(section.id),
+  );
+  label.textContent = view.label;
+  const textarea = document.createElement("textarea");
+  textarea.id = textareaId;
+  textarea.value = currentInstruction;
+  textarea.placeholder = view.placeholder;
+  textarea.disabled = state.busy || view.locked;
+  textarea.setAttribute("aria-label", view.ariaLabel);
+  const status = document.createElement("span");
+  status.className = "section-instruction-status";
+  status.setAttribute("aria-live", "polite");
+  status.textContent = view.status;
+  textarea.addEventListener("input", () => {
+    state.sectionInstructions = updateSectionInstruction(
+      state.sectionInstructions,
+      section.id,
+      textarea.value,
+    );
+    state.updatedSectionIds = state.updatedSectionIds.filter((id) => id !== section.id);
+    const nextView = sectionInstructionView(section, textarea.value, false);
+    status.textContent = nextView.status;
+    updateChangeCount();
+    persistLocalState();
+  });
+  wrapper.append(label, textarea, status);
+  return wrapper;
+}
+
+function createFieldRow(field, sectionLocked = false) {
   const row = document.createElement("div");
   row.className = "field-row";
   row.classList.toggle("is-dirty", Boolean(field.dirty));
@@ -462,7 +611,6 @@ function createFieldRow(field) {
   const meta = document.createElement("div");
   meta.className = "field-meta";
   meta.append(
-    createTextElement("span", "field-id", field.id),
     createTextElement("label", "field-label", field.label),
     createTextElement("span", "confidence-badge", confidenceLabel(field.confidence)),
   );
@@ -470,8 +618,8 @@ function createFieldRow(field) {
   const input = document.createElement(field.control === "textarea" ? "textarea" : "input");
   input.className = "field-control";
   input.value = field.value ?? "";
-  input.disabled = state.busy;
-  input.setAttribute("aria-label", `${field.id} ${field.label}`);
+  input.disabled = state.busy || sectionLocked;
+  input.setAttribute("aria-label", field.label);
   input.addEventListener("input", () => {
     state.recipe = updateEditorField(state.recipe, field.id, { value: input.value });
     row.classList.add("is-dirty");
@@ -490,10 +638,16 @@ function createSectionLockButton(section, container) {
   updateSectionLockButton(button, section);
   button.addEventListener("click", () => {
     const nextLocked = button.getAttribute("aria-pressed") !== "true";
-    state.recipe = setSectionLocked(state.recipe, section.id, nextLocked);
-    const nextSection = state.recipe.sections.find((candidate) => candidate.id === section.id);
-    updateSectionLockButton(button, nextSection);
-    container.classList.toggle("is-locked", nextLocked);
+    const next = setSectionRevisionLocked(
+      state.recipe,
+      state.sectionInstructions,
+      section.id,
+      nextLocked,
+    );
+    state.recipe = next.recipe;
+    state.sectionInstructions = next.sectionInstructions;
+    state.updatedSectionIds = state.updatedSectionIds.filter((id) => id !== section.id);
+    renderRecipe();
     persistLocalState();
   });
   return button;
@@ -557,13 +711,11 @@ function renderBoundaries() {
   }
 }
 
-function createHeadingCopy(title, description) {
+function createHeadingCopy(title) {
   const wrapper = document.createElement("div");
   const heading = document.createElement("h3");
   heading.textContent = title;
-  const copy = document.createElement("p");
-  copy.textContent = description;
-  wrapper.append(heading, copy);
+  wrapper.append(heading);
   return wrapper;
 }
 
@@ -576,10 +728,18 @@ function createTextElement(tag, className, text) {
 
 function updateChangeCount() {
   if (!state.recipe) return;
-  const changes = collectFieldChanges(state.recipe);
-  const count = Object.keys(changes.changed).length + changes.changedPaths.length;
-  elements.changeCount.textContent = String(count);
-  elements.reviseButton.disabled = state.busy || count === 0;
+  const plan = buildRevisionPlan(state.recipe, state.sectionInstructions);
+  elements.changeCount.textContent = plan.sectionCount
+    ? `${plan.sectionCount} 个板块`
+    : plan.totalChanges
+      ? "已有修改"
+      : "暂无修改";
+  elements.reviseButton.textContent = plan.sectionCount
+    ? `提交 ${plan.sectionCount} 个板块的修改`
+    : plan.totalChanges
+      ? "提交本次修改"
+      : "提交修改";
+  elements.reviseButton.disabled = state.busy || plan.totalChanges === 0;
 }
 
 function handleCodexEvent(message) {
@@ -651,16 +811,39 @@ function failAnalysisExperience(detail) {
 
 function setBusy(busy, label) {
   state.busy = busy;
-  elements.analyzeButton.disabled = busy || !state.runId;
+  elements.analyzeButton.disabled = busy || !canAnalyze();
   elements.clearButton.disabled = busy || !state.runId;
   if (label) elements.activityState.textContent = label;
   syncBusyControls(busy);
   syncProductControls();
+  syncTransferModeControls();
   updateChangeCount();
 }
 
+function canAnalyze() {
+  return Boolean(state.runId)
+    && (state.transferMode !== "subject_swap" || Boolean(state.replacementSubject.trim()));
+}
+
+function syncTransferModeControls() {
+  const subjectSwap = state.transferMode === "subject_swap";
+  elements.transferMode.value = state.transferMode;
+  elements.transferMode.disabled = state.busy;
+  elements.replacementSubjectField.hidden = !subjectSwap;
+  elements.replacementSubject.value = state.replacementSubject;
+  elements.replacementSubject.disabled = state.busy;
+  elements.replacementSubject.required = subjectSwap;
+  elements.analyzeButton.disabled = state.busy || !canAnalyze();
+}
+
 function syncBusyControls(busy) {
-  for (const control of document.querySelectorAll(".field-control, .boundary-control")) {
+  for (const section of document.querySelectorAll(".recipe-section")) {
+    const disabled = busy || section.classList.contains("is-locked");
+    for (const control of section.querySelectorAll(".field-control, .section-instruction textarea")) {
+      control.disabled = disabled;
+    }
+  }
+  for (const control of document.querySelectorAll(".boundary-control")) {
     control.disabled = busy;
   }
 
@@ -688,8 +871,8 @@ function refreshProductStatus() {
 function setConnection(online) {
   elements.connectionStatus.classList.toggle("is-online", online);
   elements.connectionStatus.lastElementChild.textContent = online
-    ? "Codex App Server 在线"
-    : "Codex 连接中断";
+    ? "已连接"
+    : "连接中断";
 }
 
 function clearRun() {
@@ -697,6 +880,10 @@ function clearRun() {
   state.runId = null;
   state.recipe = null;
   state.compiledPrompt = "";
+  state.transferMode = "content_fidelity";
+  state.replacementSubject = "";
+  state.sectionInstructions = {};
+  state.updatedSectionIds = [];
   if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
   state.previewUrl = null;
   resetProductState();
@@ -713,6 +900,7 @@ function clearRun() {
   elements.dropZone.classList.remove("is-analyzing");
   elements.analyzeButton.disabled = true;
   elements.clearButton.disabled = true;
+  syncTransferModeControls();
   localStorage.removeItem("reverse-prompt-studio-state");
 }
 
@@ -733,6 +921,8 @@ function resetProductState() {
 function resetRecipeOutput() {
   state.recipe = null;
   state.compiledPrompt = "";
+  state.sectionInstructions = {};
+  state.updatedSectionIds = [];
   elements.compiledPrompt.value = "";
   elements.recipeEmpty.hidden = false;
   elements.recipeEditor.hidden = true;
@@ -797,6 +987,9 @@ function persistLocalState() {
       compiledPrompt: state.compiledPrompt,
       hasProduct: state.hasProduct,
       productApplied: state.productApplied,
+      transferMode: state.transferMode,
+      replacementSubject: state.replacementSubject,
+      sectionInstructions: state.sectionInstructions,
     }),
   );
 }
@@ -810,6 +1003,10 @@ function restoreLocalState() {
     state.compiledPrompt = saved.compiledPrompt ?? "";
     state.hasProduct = Boolean(saved.hasProduct);
     state.productApplied = Boolean(saved.productApplied);
+    state.transferMode = saved.transferMode ?? "content_fidelity";
+    state.replacementSubject = saved.replacementSubject ?? "";
+    state.sectionInstructions = saved.sectionInstructions ?? {};
+    state.updatedSectionIds = [];
     elements.compiledPrompt.value = state.compiledPrompt;
     elements.sourcePreview.src = `/api/runs/${state.runId}/image`;
     elements.sourcePreview.hidden = false;
@@ -824,11 +1021,444 @@ function restoreLocalState() {
       elements.productInputCard.classList.add("has-product");
       refreshProductStatus();
     }
-    elements.analyzeButton.disabled = false;
+    syncTransferModeControls();
     elements.clearButton.disabled = false;
     if (state.recipe) renderRecipe();
     syncProductControls();
   } catch {
     localStorage.removeItem("reverse-prompt-studio-state");
   }
+}
+
+function activeWorkspace() {
+  return finishElements.modeButtons.find((button) => button.classList.contains("is-active"))
+    ?.dataset.mode ?? "reverse-prompt";
+}
+
+function initializeFinishWorkbench() {
+  for (const button of finishElements.modeButtons) {
+    button.setAttribute("aria-pressed", String(button.classList.contains("is-active")));
+    button.addEventListener("click", () => switchWorkspace(button.dataset.mode));
+  }
+
+  finishElements.sourceInput.addEventListener("change", () => {
+    const [file] = finishElements.sourceInput.files;
+    if (file) uploadFinishSource(file);
+  });
+  for (const eventName of ["dragenter", "dragover"]) {
+    finishElements.dropzone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      finishElements.dropzone.classList.add("is-dragging");
+    });
+  }
+  for (const eventName of ["dragleave", "drop"]) {
+    finishElements.dropzone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      finishElements.dropzone.classList.remove("is-dragging");
+    });
+  }
+  finishElements.dropzone.addEventListener("drop", (event) => {
+    const [file] = [...event.dataTransfer.files].filter((candidate) =>
+      candidate.type.startsWith("image/"));
+    if (file) uploadFinishSource(file);
+  });
+  finishElements.addEvidence.addEventListener("click", addEvidenceRow);
+  finishElements.analyze.addEventListener("click", analyzeFinish);
+  finishElements.candidateInput.addEventListener("change", () => {
+    const [file] = finishElements.candidateInput.files;
+    if (file) uploadCandidate(file);
+  });
+  finishElements.approveCandidate.addEventListener("click", approveCandidate);
+  finishElements.copyContract.addEventListener("click", copyRepairContract);
+}
+
+function switchWorkspace(mode) {
+  for (const button of finishElements.modeButtons) {
+    const active = button.dataset.mode === mode;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
+  for (const workspace of finishElements.workspaces) {
+    workspace.hidden = workspace.dataset.workspace !== mode;
+  }
+  finishElements.repairBar.hidden = mode !== "brand-grade" || !finish.contract;
+}
+
+function validateFinishImage(file) {
+  if (!new Set(["image/png", "image/jpeg", "image/webp"]).has(file.type)) {
+    showToast("请选择 PNG、JPG 或 WEBP 图片");
+    return false;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    showToast("图片不能超过 20MB");
+    return false;
+  }
+  return true;
+}
+
+async function uploadFinishSource(file) {
+  if (!validateFinishImage(file)) return;
+  setFinishBusy(true, "正在保存待精修成图");
+  try {
+    const run = await requestBytes("/api/brand-grade/runs", file, file.type);
+    const previewUrl = URL.createObjectURL(file);
+    if (finish.sourcePreviewUrl) URL.revokeObjectURL(finish.sourcePreviewUrl);
+    finish.runId = run.id;
+    finish.sourceFile = file;
+    finish.sourcePreviewUrl = previewUrl;
+    resetFinishOutput();
+    finishElements.sourcePreview.src = previewUrl;
+    finishElements.sourcePreview.hidden = false;
+    finishElements.dropzone.classList.add("has-source");
+    finishElements.brief.hidden = false;
+    finishElements.analyze.disabled = false;
+  } catch (error) {
+    reportFinishError(error, "upload");
+  } finally {
+    setFinishBusy(false);
+    finishElements.sourceInput.value = "";
+  }
+}
+
+function resetFinishOutput() {
+  stopFinishProgress();
+  finish.audit = null;
+  finish.selectedFinding = null;
+  finish.contract = null;
+  finish.candidateId = null;
+  finish.comparison = null;
+  if (finish.candidatePreviewUrl) URL.revokeObjectURL(finish.candidatePreviewUrl);
+  finish.candidatePreviewUrl = null;
+  finishElements.evidenceList.replaceChildren();
+  finishElements.results.hidden = true;
+  finishElements.repairBar.hidden = true;
+  finishElements.candidatePanel.hidden = true;
+  finishElements.candidatePanel.dataset.state = "";
+  finishElements.candidateComparison.replaceChildren();
+  finishElements.approveCandidate.disabled = true;
+  finishElements.approveCandidate.textContent = "批准为交付源图";
+  finishElements.candidateStatus.textContent = "导入修复图后，会判断是否可以交付。";
+}
+
+function addEvidenceRow() {
+  const row = document.createElement("div");
+  row.className = "evidence-row";
+
+  const roleLabel = document.createElement("label");
+  roleLabel.textContent = "参考类型";
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", "参考类型");
+  for (const [value, label] of finishEvidenceRoles) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    select.append(option);
+  }
+  roleLabel.append(select);
+
+  const fileLabel = document.createElement("label");
+  fileLabel.className = "evidence-file";
+  const fileName = document.createElement("span");
+  fileName.textContent = "选择图片";
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/png,image/jpeg,image/webp";
+  input.setAttribute("aria-label", "证据图片");
+  input.addEventListener("change", () => {
+    delete row.dataset.inputId;
+    fileName.textContent = input.files[0]?.name ?? "选择图片";
+  });
+  fileLabel.append(fileName, input);
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "evidence-remove";
+  remove.setAttribute("aria-label", "移除这条证据");
+  remove.textContent = "×";
+  remove.addEventListener("click", () => row.remove());
+
+  row.append(roleLabel, fileLabel, remove);
+  finishElements.evidenceList.append(row);
+}
+
+function readFinishBrief() {
+  return Object.fromEntries(
+    [...finishElements.brief.querySelectorAll(".brief-grid input")]
+      .map((input) => [input.name, input.value.trim()]),
+  );
+}
+
+async function uploadEvidenceRows(runId) {
+  const rows = [...finishElements.evidenceList.querySelectorAll(".evidence-row")];
+  for (const row of rows) {
+    if (row.dataset.inputId) continue;
+    const file = row.querySelector('input[type="file"]').files[0];
+    if (!file) continue;
+    if (!validateFinishImage(file)) throw new Error("证据图片格式或大小不符合要求");
+    const role = row.querySelector("select").value;
+    const input = await requestBytes(
+      `/api/brand-grade/runs/${runId}/inputs?role=${encodeURIComponent(role)}`,
+      file,
+      file.type,
+    );
+    row.dataset.inputId = input.id;
+  }
+}
+
+async function analyzeFinish() {
+  if (!finish.runId || finish.progressTimer) return;
+  showFinishProgress();
+  setFinishBusy(true);
+  try {
+    await uploadEvidenceRows(finish.runId);
+    finish.audit = await requestJson(
+      `/api/brand-grade/runs/${finish.runId}/audit`,
+      "POST",
+      readFinishBrief(),
+    );
+    const presentation = presentAudit(finish.audit);
+    finishElements.resultTitle.textContent = presentation.title;
+    renderGateRail(presentation.gates);
+    renderFindings(finish.audit, presentation);
+    finishElements.results.hidden = false;
+  } catch (error) {
+    reportFinishError(error, "audit");
+    finishElements.brief.hidden = false;
+  } finally {
+    stopFinishProgress();
+    setFinishBusy(false);
+  }
+}
+
+function showFinishProgress() {
+  stopFinishProgress();
+  finishElements.progress.hidden = false;
+  finishElements.results.hidden = true;
+  finishElements.repairBar.hidden = true;
+  finishElements.candidatePanel.hidden = true;
+  let index = 0;
+  finishElements.progressTitle.textContent = finishProgressMessages[index];
+  finish.progressTimer = window.setInterval(() => {
+    index = (index + 1) % finishProgressMessages.length;
+    finishElements.progressTitle.textContent = finishProgressMessages[index];
+  }, 1800);
+}
+
+function stopFinishProgress() {
+  if (finish.progressTimer) window.clearInterval(finish.progressTimer);
+  finish.progressTimer = null;
+  finishElements.progress.hidden = true;
+}
+
+function renderGateRail(rail) {
+  finishElements.gateRail.replaceChildren();
+  for (const gate of rail) {
+    const item = document.createElement("li");
+    item.className = "gate-rail__item";
+    item.dataset.current = String(gate.isCurrent);
+    item.dataset.tone = gate.tone;
+    item.setAttribute("aria-current", gate.isCurrent ? "step" : "false");
+    item.setAttribute("aria-label", `${gate.label}：${gate.status}`);
+    const top = document.createElement("div");
+    top.className = "gate-rail__top";
+    top.append(createTextElement("span", "gate-rail__status", `${gate.icon} ${gate.status}`));
+    item.append(
+      top,
+      createTextElement("strong", "gate-rail__name", gate.label),
+    );
+    finishElements.gateRail.append(item);
+  }
+}
+
+function renderFindings(audit, presentation) {
+  finishElements.findingList.replaceChildren();
+  const activeGate = audit.gates.find((gate) => gate.id === audit.earliestFailureGate);
+  if (!activeGate) {
+    const pass = createTextElement("div", "finish-all-pass", "✓ 没有需要处理的问题");
+    finishElements.findingList.append(pass);
+    return;
+  }
+
+  activeGate.findings.forEach((finding, index) => {
+    const visible = presentation.findings[index];
+    const card = document.createElement("article");
+    card.className = "finding-card";
+    const heading = document.createElement("div");
+    heading.className = "finding-card__heading";
+    heading.append(createTextElement("strong", "", visible.title));
+    const evidence = createTextElement("p", "finding-card__evidence", `现象：${visible.observation}`);
+    const target = createTextElement("p", "finding-card__target", `建议：${visible.suggestion}`);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button button--primary";
+    button.textContent = visible.action.label;
+    button.disabled = !visible.action.enabled;
+    button.setAttribute("aria-label", `${visible.action.label}：${visible.title}`);
+    button.addEventListener("click", () => selectFinding(finding));
+    card.append(heading, evidence, target, button);
+    finishElements.findingList.append(card);
+  });
+}
+
+async function selectFinding(finding) {
+  const activeGate = finish.audit?.gates.find((gate) => gate.id === finish.audit.earliestFailureGate);
+  if (!activeGate?.findings.some((item) => item.id === finding.id)) {
+    return showToast("请先处理当前显示的问题");
+  }
+  const action = repairActionState(finding);
+  finish.selectedFinding = finding;
+  if (!action.enabled) return showToast(action.label);
+
+  setFinishBusy(true, "正在生成修复指令");
+  try {
+    finish.contract = await requestJson(
+      `/api/brand-grade/runs/${finish.runId}/contracts`,
+      "POST",
+      { findingId: finding.id },
+    );
+    finishElements.repairTitle.textContent = finding.title;
+    finishElements.repairBar.hidden = false;
+    finishElements.candidatePanel.hidden = false;
+    finishElements.candidateStatus.textContent = "导入修复图后，会判断是否可以交付。";
+    finishElements.candidatePanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    reportFinishError(error, "contract");
+  } finally {
+    setFinishBusy(false);
+  }
+}
+
+async function copyRepairContract() {
+  if (!finish.contract?.platformPrompt) return;
+  const originalLabel = finishElements.copyContract.textContent;
+  try {
+    await navigator.clipboard.writeText(finish.contract.platformPrompt);
+    finishElements.copyContract.textContent = "已复制";
+    window.setTimeout(() => {
+      finishElements.copyContract.textContent = originalLabel;
+    }, 1500);
+  } catch {
+    showToast("复制失败，请检查浏览器剪贴板权限");
+  }
+}
+
+async function uploadCandidate(file) {
+  if (!finish.contract || !validateFinishImage(file)) return;
+  setFinishBusy(true, "正在比较候选图");
+  finishElements.candidateStatus.textContent = "正在检查修复图…";
+  try {
+    const candidate = await requestBytes(
+      `/api/brand-grade/runs/${finish.runId}/candidates`,
+      file,
+      file.type,
+    );
+    finish.candidateId = candidate.id;
+    finish.comparison = await requestJson(
+      `/api/brand-grade/runs/${finish.runId}/candidates/${candidate.id}/compare`,
+      "POST",
+    );
+    const previewUrl = URL.createObjectURL(file);
+    if (finish.candidatePreviewUrl) URL.revokeObjectURL(finish.candidatePreviewUrl);
+    finish.candidatePreviewUrl = previewUrl;
+    renderComparison(finish.comparison, previewUrl);
+    finishElements.approveCandidate.disabled = !canApproveCandidate(finish.comparison);
+  } catch (error) {
+    finishElements.candidateStatus.textContent = "修复图检查未完成。";
+    reportFinishError(error, "comparison");
+  } finally {
+    setFinishBusy(false);
+    finishElements.candidateInput.value = "";
+  }
+}
+
+function renderComparison(comparison, candidatePreviewUrl) {
+  finishElements.candidateComparison.replaceChildren();
+  const images = document.createElement("div");
+  images.className = "comparison-images";
+  for (const [label, src] of [
+    ["原始源图", finish.sourcePreviewUrl],
+    ["修复候选", candidatePreviewUrl],
+  ]) {
+    const figure = document.createElement("figure");
+    const image = document.createElement("img");
+    image.src = src;
+    image.alt = label;
+    const caption = document.createElement("figcaption");
+    caption.textContent = label;
+    figure.append(image, caption);
+    images.append(figure);
+  }
+
+  const qc = document.createElement("div");
+  qc.className = "comparison-result";
+  const visible = presentComparison(comparison);
+  qc.dataset.tone = visible.approvable ? "positive" : "critical";
+  qc.append(
+    createTextElement("strong", "comparison-result__title", visible.outcome),
+    createTextElement("p", "comparison-result__reason", visible.reason),
+  );
+  finishElements.candidateComparison.append(images, qc);
+
+  finishElements.candidateStatus.textContent = visible.approvable
+    ? "可以批准为交付图。"
+    : "请调整后重新导入。";
+}
+
+async function approveCandidate() {
+  if (!finish.candidateId || !canApproveCandidate(finish.comparison)) return;
+  setFinishBusy(true, "正在批准候选图");
+  try {
+    await requestJson(
+      `/api/brand-grade/runs/${finish.runId}/candidates/${finish.candidateId}/approve`,
+      "POST",
+    );
+    finishElements.candidatePanel.dataset.state = "approved";
+    finishElements.approveCandidate.textContent = "已批准";
+    finishElements.approveCandidate.disabled = true;
+    finishElements.candidateStatus.textContent = "✓ 已批准，可以进入后续处理。";
+  } catch (error) {
+    reportFinishError(error, "approval");
+  } finally {
+    setFinishBusy(false);
+  }
+}
+
+function setFinishBusy(busy, label) {
+  finishElements.sourceInput.disabled = busy;
+  finishElements.addEvidence.disabled = busy;
+  finishElements.analyze.disabled = busy || !finish.runId;
+  finishElements.candidateInput.disabled = busy;
+  finishElements.copyContract.disabled = busy;
+  if (label) finishElements.candidateStatus.textContent = label;
+  for (const control of finishElements.evidenceList.querySelectorAll("input, select, button")) {
+    control.disabled = busy;
+  }
+}
+
+function reportFinishError(error, context) {
+  console.error("Brand-grade action failed", { context, error });
+  showToast(friendlyFinishError(error, context));
+}
+
+async function requestBytes(url, bytes, contentType) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": contentType },
+    body: bytes,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || `请求失败：${response.status}`);
+  return body;
+}
+
+async function requestJson(url, method = "GET", body) {
+  const options = { method, headers: {} };
+  if (body !== undefined) {
+    options.headers["content-type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(url, options);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `请求失败：${response.status}`);
+  return payload;
 }

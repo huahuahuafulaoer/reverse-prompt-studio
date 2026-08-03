@@ -6,8 +6,22 @@ import path from "node:path";
 import {
   browserLaunchCommand,
   listenOnAvailablePort,
+  resolveAppServerCommand,
   resolveRuntimePaths,
 } from "../src/runtime-config.mjs";
+
+test("resolveAppServerCommand supports the fake-server acceptance override", () => {
+  assert.deepEqual(resolveAppServerCommand({}), {});
+  assert.deepEqual(
+    resolveAppServerCommand({
+      CODEX_APP_SERVER_COMMAND: '"/opt/Node Runtime/node" "fixtures/fake server.mjs" --quiet',
+    }),
+    {
+      command: "/opt/Node Runtime/node",
+      args: ["fixtures/fake server.mjs", "--quiet"],
+    },
+  );
+});
 
 test("resolveRuntimePaths keeps skill code inside the plugin and user data outside it", () => {
   const pluginRoot = "/opt/plugins/reverse-prompt-studio";

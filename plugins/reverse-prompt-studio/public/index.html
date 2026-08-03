@@ -16,7 +16,7 @@
         </a>
         <div class="connection" id="connectionStatus">
           <span class="connection-dot" aria-hidden="true"></span>
-          <span>连接 Codex</span>
+          <span>连接中</span>
         </div>
       </header>
 
@@ -46,6 +46,16 @@
         </div>
       </section>
 
+      <nav class="mode-switch" aria-label="工作模式">
+        <button type="button" class="mode-switch__item is-active" data-mode="reverse-prompt">
+          提示词反推
+        </button>
+        <button type="button" class="mode-switch__item" data-mode="brand-grade">
+          品牌级精修
+        </button>
+      </nav>
+
+      <div data-workspace="reverse-prompt">
       <main class="workspace">
         <aside class="source-pane">
           <div class="pane-heading">
@@ -62,6 +72,20 @@
             </div>
             <img id="sourcePreview" alt="待分析的参考图预览" hidden />
             <span class="replace-hint" id="replaceHint" hidden>点击更换图片</span>
+          </label>
+
+          <div class="transfer-mode-control">
+            <label for="transferMode">反推模式</label>
+            <select id="transferMode">
+              <option value="content_fidelity" selected>内容保真</option>
+              <option value="style_composition">风格构图</option>
+              <option value="subject_swap">主体替换</option>
+            </select>
+          </div>
+
+          <label class="replacement-subject-field" id="replacementSubjectField" hidden>
+            <span>替换为</span>
+            <input id="replacementSubject" type="text" autocomplete="off" />
           </label>
 
           <div class="product-input-card" id="productInputCard">
@@ -134,27 +158,20 @@
 
             <div class="section-stack" id="sectionStack"></div>
 
-            <section class="boundary-section">
-              <div class="section-title-row">
-                <span class="section-code">Q</span>
-                <div>
-                  <h3>迁移与真值边界</h3>
-                  <p>决定保留什么，以及避免什么。</p>
-                </div>
-              </div>
+            <details class="boundary-section">
+              <summary>高级边界设置</summary>
               <div class="boundary-grid" id="boundaryGrid"></div>
-            </section>
+            </details>
           </div>
         </section>
       </main>
 
       <footer class="export-dock" id="exportDock" hidden>
         <div class="change-summary">
-          <span class="change-count" id="changeCount">0</span>
-          <span>处修改</span>
+          <span class="change-count" id="changeCount">暂无修改</span>
         </div>
         <button class="button button-rebuild" id="reviseButton" type="button">
-          重新生成
+          提交修改
         </button>
         <textarea id="compiledPrompt" hidden readonly></textarea>
         <div class="copy-actions">
@@ -162,6 +179,91 @@
           <button class="button button-primary" id="copyPromptButton" type="button">复制提示词</button>
         </div>
       </footer>
+      </div>
+
+      <main class="finish-workspace" data-workspace="brand-grade" hidden>
+        <header class="finish-heading">
+          <h1>检查成图，修到可交付。</h1>
+        </header>
+
+        <section class="finish-source">
+          <label id="finish-dropzone" class="finish-dropzone" for="finish-source-input">
+            <input
+              id="finish-source-input"
+              class="finish-file-input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+            />
+            <span class="finish-dropzone__mark" aria-hidden="true">↗</span>
+            <strong>放入待精修成图</strong>
+            <small>PNG · JPG · WEBP · 最大 20MB</small>
+            <img id="finish-source-preview" alt="待精修成图预览" hidden />
+          </label>
+        </section>
+
+        <section id="finish-brief" class="finish-brief" hidden>
+          <div class="brief-grid">
+            <label>渠道<input name="channel" placeholder="如 PDP / 社媒 / 海报" /></label>
+            <label>受众<input name="audience" placeholder="核心观看者" /></label>
+            <label>第一眼<input name="firstRead" placeholder="产品 / 人物 / 信息" /></label>
+            <label>品牌气质<input name="brandCharacter" placeholder="如 专业、克制、温暖" /></label>
+            <label>文案安全区<input name="copySafeArea" placeholder="如 右上 / 无" /></label>
+          </div>
+          <div id="evidence-list" class="evidence-list"></div>
+          <div class="finish-brief__actions">
+            <button id="add-evidence" type="button" class="button button--ghost">
+              添加参考图
+            </button>
+            <button id="finish-analyze" type="button" class="button button--primary">
+              开始品牌级诊断
+            </button>
+          </div>
+        </section>
+
+        <section id="finish-progress" class="finish-progress" hidden aria-live="polite">
+          <span class="finish-progress__orb" aria-hidden="true"></span>
+          <strong id="finish-progress-title">检查真实感</strong>
+        </section>
+
+        <section id="finish-results" class="finish-results" hidden>
+          <div class="finish-section-heading finish-section-heading--compact">
+            <h2 id="finish-result-title">检查结果</h2>
+          </div>
+          <ol id="gate-rail" class="gate-rail"></ol>
+          <div id="finding-list" class="finding-list"></div>
+        </section>
+
+        <section id="candidate-panel" class="candidate-panel" hidden>
+          <div class="finish-section-heading">
+            <h2>导入修复图</h2>
+            <label class="button button--ghost candidate-upload">
+              选择修复图
+              <input
+                id="candidate-input"
+                class="finish-file-input"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+              />
+            </label>
+          </div>
+          <div id="candidate-comparison" class="candidate-comparison"></div>
+          <div class="candidate-actions">
+            <p id="candidate-status">导入修复图后，会判断是否可以交付。</p>
+            <button id="approve-candidate" type="button" class="button button--primary" disabled>
+              批准为交付源图
+            </button>
+          </div>
+        </section>
+      </main>
+
+      <aside id="repair-bar" class="repair-bar" hidden>
+        <div>
+          <strong id="repair-title"></strong>
+        </div>
+        <button id="copy-repair-contract" type="button" class="button button--primary">
+          复制修复指令
+        </button>
+      </aside>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

@@ -2,6 +2,24 @@
 
 The reverse-prompt result has one structured source of truth and multiple views. Never write two independent prompts.
 
+## Reverse Prompt Studio transfer contract
+
+The editor transport `reverse-image-prompt/editor-v1` always includes these fixed top-level fields:
+
+```json
+{
+  "transferMode": "content_fidelity",
+  "contentAnchors": {
+    "subject": { "value": "", "preserve": true, "sourceRole": "content_reference" },
+    "action": { "value": "", "preserve": true, "sourceRole": "content_reference" },
+    "interaction": { "value": "", "preserve": true, "sourceRole": "content_reference" },
+    "scene": { "value": "", "preserve": true, "sourceRole": "content_reference" }
+  }
+}
+```
+
+Allowed modes are `content_fidelity`, `style_composition`, and `subject_swap`. For content fidelity, every anchor value and the `S`/`A` sections are non-empty, and preserved subject/action semantics stay positive rather than appearing in `omit` or negative constraints. Add two semantic-drift negatives: same-scene activities with a different primary action, and similar-posture/equipment professions, tasks, or uses. For style composition, use empty values with `preserve=false` and `sourceRole=not_applicable`. For subject swap, `contentAnchors.subject.value` exactly matches the user's replacement, with `preserve=true` and `sourceRole=user_or_project_truth`. Revisions and product matching retain this contract unchanged.
+
 ## Mode selection
 
 | User intent | Mode | Return |

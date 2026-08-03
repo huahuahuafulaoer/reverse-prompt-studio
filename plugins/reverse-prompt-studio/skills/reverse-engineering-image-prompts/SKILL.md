@@ -14,7 +14,8 @@ Reconstruct a **plausible causal visual recipe**, not the unknown original promp
 - Inspect every target image directly. Do not reverse-prompt from a filename, memory, alt text, or another person's summary when the image is available.
 - State that the result is an inferred recipe, never a verified recovery of the original prompt.
 - Separate four evidence classes: `observed`, `inferred`, `user_or_project_truth`, and `unknown`.
-- Assign each input exactly one **primary** role: `edit_target`, `product_truth`, `subject_reference`, `style_reference`, `composition_reference`, `material_reference`, `hard_structure_reference`, or `inspiration_only`. Never concatenate roles such as `style_reference + composition_reference`. If one image supplies several loose visual cues, use `inspiration_only` and list the permitted cue dimensions.
+- Assign each input exactly one **primary** role: `edit_target`, `product_truth`, `subject_reference`, `style_reference`, `composition_reference`, `material_reference`, `hard_structure_reference`, `content_reference`, or `inspiration_only`. Never concatenate roles such as `style_reference + composition_reference` or `content_reference + style_reference`.
+- Treat `content_reference` as authority for generic subject class/count, action, interaction, scene class, composition, light, and color. It never authorizes copying a person's identity, logo, original text, protected lettering, exact location outline, or an unverified gear brand/model/engineering or safety function.
 - Treat `inspiration_only` as analysis evidence. Do not pass it to a generator or copy its distinctive subject combination, location, props, text, brand, or narrative device.
 - Never infer exact product geometry, engineering function, performance claim, brand identity, or material specification from appearance alone. Require a verified truth source or mark it unknown. Describe an unverified metaphor as a visible relation—such as “light paths converge toward the corner”—not as a functional verb such as “absorbs impact”, “cools”, “filters”, or “protects”.
 - Build a platform-neutral brief first. Adapt syntax only when the provider/model is known.
@@ -24,16 +25,14 @@ Reconstruct a **plausible causal visual recipe**, not the unknown original promp
 
 ### 1. Resolve the transfer job
 
-Identify what the user wants to reuse:
+Identify the transfer mode first:
 
-- `style_transfer`: light, color, atmosphere, material response, finish;
-- `composition_transfer`: framing, scale, depth, negative space, viewing path;
-- `subject_or_product_swap`: keep visual language while replacing identity-bearing content;
-- `scene_transfer`: keep subject/product truth while rebuilding the world;
-- `near_recreation`: reproduce most visible relationships, subject to rights and truth boundaries;
+- `content_fidelity` (default): use one `content_reference` and preserve generic subject class/count, action, interaction, scene class, framing, scale/position, light, and color as positive generation anchors. This is a bounded `near_recreation`, not identity or brand reproduction;
+- `style_composition`: use `inspiration_only`; transfer framing, scale, depth, negative space, light, color, atmosphere, material response, and finish while allowing a new subject and narrative;
+- `subject_swap`: use one `content_reference`, but treat the user's replacement subject as `user_or_project_truth`. Preserve composition, translate action/interaction for the new subject's physical plausibility, and do not retain the original subject identity;
 - `analysis_only`: explain how the image works without writing a production prompt.
 
-If unspecified, default to `style_transfer + composition_transfer` and replace identity-bearing content. Ask one question only when a different choice would materially change the output.
+If unspecified, default to `content_fidelity`. A `subject_swap` is invalid until the user supplies the replacement subject.
 
 ### 2. Audit sources and roles
 
@@ -65,6 +64,13 @@ Write three short lists:
 - `preserve`: variables essential to the reference's visual effect;
 - `translate`: relationships to rebuild with the new subject/product rather than copy literally;
 - `omit`: identity-bearing, legally sensitive, unverifiable, distracting, or user-rejected elements.
+
+Also write the fixed transfer contract:
+
+- `transferMode`: `content_fidelity`, `style_composition`, or `subject_swap`;
+- `contentAnchors.subject`, `.action`, `.interaction`, and `.scene`, each with `value`, `preserve`, and one `sourceRole` (`content_reference`, `user_or_project_truth`, or `not_applicable`).
+
+In `content_fidelity`, all four anchors are non-empty, positive, preserved `content_reference` evidence, and the `S` and `A` sections must be non-empty. Never move the preserved generic subject or action into `omit` or `negativeConstraints`. Add two distinct semantic-drift negatives: one names the closest same-scene activities with a different primary action, and the other names the closest profession/task/use categories with similar posture or equipment. Keep pose, anatomy, and rendering failures in separate entries. In `style_composition`, all four anchors are not applicable. In `subject_swap`, the subject anchor exactly preserves the user's replacement as `user_or_project_truth`; the other anchors describe physically reasonable translation from the reference.
 
 Convert adjectives into evidence. Replace “premium” with visible consequences such as controlled highlight width, readable dark values, restrained accent area, stable geometry, and deliberate negative space.
 
@@ -104,6 +110,8 @@ Store the inferred recipe as structured fields, not as a prose prompt. Use stabl
 Keep field IDs stable during an editing session. Do not renumber unaffected fields after a revision. Express user-facing values as plain language plus a machine-readable value when useful, for example `偏硬〔4/5〕`, `中央偏右〔x 62% / y 58%〕`, or `主体约占 68%`.
 
 The structured state is the only source of truth. Do not maintain a separate prose prompt that can drift from it.
+
+For the Reverse Prompt Studio editor transport, always include `transferMode` and all four fixed `contentAnchors` at the recipe top level. Preserve them unchanged in revisions and product matching unless the user explicitly starts a new analysis with a different mode.
 
 ### 7. Present, edit, or execute
 

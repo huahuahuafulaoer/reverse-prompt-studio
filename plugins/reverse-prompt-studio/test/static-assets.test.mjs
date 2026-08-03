@@ -38,6 +38,43 @@ test("section locks use icon-only controls instead of per-field buttons", async 
   assert.match(css, /\.section-lock-button/);
 });
 
+test("recipe sections render natural-language revision controls with collapsed advanced fields", async () => {
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+  const css = await readFile(path.join(projectDirectory, "public/styles.css"), "utf8");
+  const renderRecipe = script.slice(
+    script.indexOf("function renderRecipe()"),
+    script.indexOf("function renderBoundaries()"),
+  );
+
+  assert.match(renderRecipe, /createSectionInstructionControl\(section/);
+  assert.match(renderRecipe, /document\.createElement\("details"\)/);
+  assert.match(renderRecipe, /summary\.textContent = "查看详细参数"/);
+  assert.match(renderRecipe, /textarea\.setAttribute\("aria-label", view\.ariaLabel\)/);
+  assert.doesNotMatch(renderRecipe, /"section-code", section\.id/);
+  assert.doesNotMatch(renderRecipe, /"field-id", field\.id/);
+  assert.match(css, /\.section-instruction/);
+  assert.match(css, /\.section-details/);
+});
+
+test("revision requests persist section instructions and clear them only after success", async () => {
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+  const reviseRecipe = script.slice(
+    script.indexOf("async function reviseRecipe()"),
+    script.indexOf("async function matchProduct()"),
+  );
+  const persistence = script.slice(
+    script.indexOf("function persistLocalState()"),
+    script.indexOf("function activeWorkspace()"),
+  );
+
+  assert.match(reviseRecipe, /sectionInstructions: plan\.sectionInstructions/);
+  assert.match(reviseRecipe, /正在按要求修改/);
+  assert.match(reviseRecipe, /clearSubmittedSectionInstructions/);
+  assert.doesNotMatch(reviseRecipe.slice(reviseRecipe.indexOf("catch")), /sectionInstructions\s*=/);
+  assert.match(persistence, /sectionInstructions: state\.sectionInstructions/);
+  assert.match(persistence, /saved\.sectionInstructions/);
+});
+
 test("compact export dock does not render the prompt preview", async () => {
   const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
   const css = await readFile(path.join(projectDirectory, "public/styles.css"), "utf8");
@@ -80,6 +117,21 @@ test("the source pane has a compact product-truth input and explicit match actio
   assert.match(css, /grid-template-columns:\s*64px\s+minmax\(0, 1fr\)\s+auto/);
 });
 
+test("reverse prompt mode controls default to content fidelity and submit subject-swap truth", async () => {
+  const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+
+  assert.match(html, /id="transferMode"/);
+  assert.match(html, /value="content_fidelity"[^>]*selected/);
+  assert.match(html, /value="style_composition"/);
+  assert.match(html, /value="subject_swap"/);
+  assert.match(html, /id="replacementSubjectField"[^>]*hidden/);
+  assert.match(html, /id="replacementSubject"/);
+  assert.match(script, /transferMode:\s*"content_fidelity"/);
+  assert.match(script, /replacementSubject/);
+  assert.match(script, /JSON\.stringify\(\{[\s\S]*runId: state\.runId,[\s\S]*transferMode: state\.transferMode,[\s\S]*replacementSubject: state\.replacementSubject/);
+});
+
 test("image replacement switches runs only after upload succeeds", async () => {
   const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
   const acceptSource = script.slice(
@@ -100,4 +152,46 @@ test("image replacement switches runs only after upload succeeds", async () => {
   );
   assert.match(acceptProduct, /previousProductState/);
   assert.doesNotMatch(acceptProduct, /catch \(error\) \{\s*resetProductState\(\)/);
+});
+
+test("brand grade workbench exposes the required controls", async () => {
+  const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
+  assert.match(html, /data-mode="brand-grade"/);
+  assert.match(html, /id="finish-dropzone"/);
+  assert.match(html, /id="finish-analyze"/);
+  assert.match(html, /id="gate-rail"/);
+  assert.match(html, /id="copy-repair-contract"/);
+  assert.match(html, /id="candidate-input"/);
+  assert.match(html, /id="approve-candidate"/);
+});
+
+test("brand grade markup and render paths omit backend-facing language", async () => {
+  const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+  const css = await readFile(path.join(projectDirectory, "public/styles.css"), "utf8");
+  const brandMarkup = html.slice(html.indexOf('<main class="finish-workspace"'), html.indexOf("</main>", html.indexOf('<main class="finish-workspace"')));
+  const brandRender = script.slice(script.indexOf("function renderGateRail"), script.indexOf("function setFinishBusy"));
+
+  assert.doesNotMatch(brandMarkup, /DELIVERY IMAGE|MINIMUM BRIEF|SEQUENTIAL GATES|CANDIDATE QC|FAIL|HOLD|PASS|四层|质量门槛|最早失守/);
+  assert.doesNotMatch(brandRender, /changePaths\.join|drift\.path|comparison\.verdict|锁定路径|四层 PASS/);
+  assert.doesNotMatch(brandRender, /showToast\(error\.message\)/);
+  assert.match(brandMarkup, /id="finish-result-title"/);
+  assert.match(html, />\s*复制修复指令\s*</);
+  assert.doesNotMatch(`${html}\n${script}`, /Codex App Server/);
+  assert.match(css, /\.finding-list\s*\{[^}]*padding-bottom:\s*0;/s);
+  assert.match(css, /gate-rail__item\[data-tone="positive"\]/);
+  assert.match(css, /gate-rail__item\[data-tone="caution"\]/);
+  assert.match(css, /gate-rail__item\[data-tone="critical"\]/);
+});
+
+test("creating a repair contract leaves the candidate panel in its QC-ready state", async () => {
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+  const selectFinding = script.slice(
+    script.indexOf("async function selectFinding(finding)"),
+    script.indexOf("async function copyRepairContract()"),
+  );
+  assert.match(
+    selectFinding,
+    /candidateStatus\.textContent = "导入修复图后，会判断是否可以交付。"/,
+  );
 });

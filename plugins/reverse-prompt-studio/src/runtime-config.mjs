@@ -1,5 +1,45 @@
 import path from "node:path";
 
+export function resolveAppServerCommand(env = process.env) {
+  const raw = env.CODEX_APP_SERVER_COMMAND?.trim();
+  if (!raw) return {};
+  const parts = [];
+  let current = "";
+  let quote = null;
+
+  for (let index = 0; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      } else if (character === "\\" && [quote, "\\"].includes(raw[index + 1])) {
+        current += raw[index + 1];
+        index += 1;
+      } else {
+        current += character;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+    } else if (/\s/.test(character)) {
+      if (current) {
+        parts.push(current);
+        current = "";
+      }
+    } else if (character === "\\" && /[\s'"\\]/.test(raw[index + 1] ?? "")) {
+      current += raw[index + 1];
+      index += 1;
+    } else {
+      current += character;
+    }
+  }
+  if (quote) throw new Error("Invalid CODEX_APP_SERVER_COMMAND: unclosed quote");
+  if (current) parts.push(current);
+  if (parts.length === 0) throw new Error("Invalid CODEX_APP_SERVER_COMMAND");
+  return { command: parts[0], args: parts.slice(1) };
+}
+
 export function resolveRuntimePaths({
   pluginRoot,
   platform = process.platform,
