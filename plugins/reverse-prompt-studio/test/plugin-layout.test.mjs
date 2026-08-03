@@ -56,3 +56,10 @@ test("published text and runtime code do not contain the developer's absolute ho
     assert.doesNotMatch(contents, /\/Users\/bjb03268/);
   }
 });
+
+test("bundles the brand grade finishing skill", async () => {
+  await readFile(path.join(pluginRoot, "skills/brand-grade-finishing/SKILL.md"));
+  await readFile(
+    path.join(pluginRoot, "skills/brand-grade-finishing/references/output-contract.md"),
+  );
+});
