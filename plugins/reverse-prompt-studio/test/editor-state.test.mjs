@@ -145,3 +145,20 @@ test("restoreLockedSections rejects model changes to locally locked values", () 
     ],
   );
 });
+
+test("restoreLockedSections preserves transfer mode and content anchors across model turns", () => {
+  const previous = {
+    transferMode: "subject_swap",
+    contentAnchors: {
+      subject: { value: "红色机械鸟", preserve: true, sourceRole: "user_or_project_truth" },
+    },
+    sections: [],
+  };
+  const next = editorState.restoreLockedSections(
+    { transferMode: "style_composition", contentAnchors: {}, sections: [] },
+    previous,
+  );
+
+  assert.equal(next.transferMode, "subject_swap");
+  assert.deepEqual(next.contentAnchors, previous.contentAnchors);
+});

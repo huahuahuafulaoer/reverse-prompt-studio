@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { EventEmitter } from "node:events";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -64,6 +65,44 @@ test("StudioService analyzes and revises a run on the same Codex thread", async 
   } finally {
     service.close();
     appServer.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("StudioService rejects an incomplete content-fidelity result without persisting it", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "reverse-prompt-invalid-fidelity-"));
+  const store = new RunStore(root);
+  const thread = new EventEmitter();
+  thread.id = "thr_invalid";
+  thread.run = async () => ({
+    schema: "reverse-image-prompt/editor-v1",
+    title: "Incomplete",
+    transferMode: "content_fidelity",
+    contentAnchors: {
+      subject: { value: "单人攀岩者", preserve: true, sourceRole: "content_reference" },
+      action: { value: "攀爬岩壁", preserve: true, sourceRole: "content_reference" },
+      interaction: { value: "身体接触岩壁", preserve: true, sourceRole: "content_reference" },
+      scene: { value: "户外岩壁", preserve: true, sourceRole: "content_reference" },
+    },
+    sections: [{ id: "C", label: "构图", fields: [] }],
+    referenceTransfer: { preserve: [], translate: [], omit: [] },
+    truthGaps: [],
+    negativeConstraints: [],
+  });
+  thread.close = () => {};
+  const service = new StudioService({
+    appServer: { startThread: async () => thread },
+    store,
+    workspaceRoot: "/tmp/project",
+    skillPath: "/tmp/skill/SKILL.md",
+  });
+
+  try {
+    const run = await store.createRun({ bytes: Buffer.from("image"), contentType: "image/png" });
+    await assert.rejects(() => service.analyze(run.id), /S.*A|主体.*动作/);
+    assert.doesNotMatch((await readdir(path.join(root, run.id))).join("\n"), /recipe\.json/);
+  } finally {
+    service.close();
     await rm(root, { recursive: true, force: true });
   }
 });

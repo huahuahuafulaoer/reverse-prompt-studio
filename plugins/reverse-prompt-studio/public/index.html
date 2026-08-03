@@ -74,6 +74,20 @@
             <span class="replace-hint" id="replaceHint" hidden>点击更换图片</span>
           </label>
 
+          <div class="transfer-mode-control">
+            <label for="transferMode">反推模式</label>
+            <select id="transferMode">
+              <option value="content_fidelity" selected>内容保真</option>
+              <option value="style_composition">风格构图</option>
+              <option value="subject_swap">主体替换</option>
+            </select>
+          </div>
+
+          <label class="replacement-subject-field" id="replacementSubjectField" hidden>
+            <span>替换为</span>
+            <input id="replacementSubject" type="text" autocomplete="off" />
+          </label>
+
           <div class="product-input-card" id="productInputCard">
             <label class="product-thumb" for="productInput" title="添加或更换产品图">
               <input

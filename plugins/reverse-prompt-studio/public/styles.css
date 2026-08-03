@@ -375,6 +375,27 @@ label:focus-within {
   transition: border-color 160ms ease, background 160ms ease;
 }
 
+.transfer-mode-control,
+.replacement-subject-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.transfer-mode-control select,
+.replacement-subject-field input {
+  min-width: 0;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 0 10px;
+  color: var(--ink);
+}
+
 .product-input-card:focus-within,
 .product-input-card.has-product {
   border-color: #bdc9a7;

@@ -117,7 +117,12 @@ export function productStatusLabel({
 
 export function restoreLockedSections(nextRecipe, previousRecipe, lockedSectionIds = []) {
   const next = structuredClone(nextRecipe);
-  if (!previousRecipe || !lockedSectionIds.length) return next;
+  if (!previousRecipe) return next;
+  if (previousRecipe.transferMode) next.transferMode = previousRecipe.transferMode;
+  if (previousRecipe.contentAnchors) {
+    next.contentAnchors = structuredClone(previousRecipe.contentAnchors);
+  }
+  if (!lockedSectionIds.length) return next;
   const lockedIds = new Set(lockedSectionIds);
   const previousSections = new Map(
     (previousRecipe.sections ?? []).map((section) => [section.id, section]),

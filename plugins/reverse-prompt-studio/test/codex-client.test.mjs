@@ -77,8 +77,14 @@ test("createAnalyzeTurnParams labels reference and product images with separate 
     skillPath: "/tmp/skill/SKILL.md",
   });
 
-  assert.match(params.input[0].text, /构图、光影、色彩、环境和可迁移风格/);
-  assert.match(params.input[0].text, /inspiration_only/);
+  assert.match(params.input[0].text, /content_reference/);
+  assert.match(params.input[0].text, /near_recreation/);
+  assert.match(params.input[0].text, /主体类别、人数、动作、交互关系、场景类别/);
+  assert.match(params.input[0].text, /活动.*职业、任务或用途/s);
+  assert.match(params.input[0].text, /至少一条 negativeConstraints/);
+  assert.match(params.input[0].text, /同类场景但主动作不同/);
+  assert.match(params.input[0].text, /姿态或器材相似但职业、任务或用途不同/);
+  assert.doesNotMatch(params.input[0].text, /inspiration_only/);
   assert.deepEqual(params.input[2], {
     type: "localImage",
     path: "/tmp/reference.png",
@@ -91,6 +97,63 @@ test("createAnalyzeTurnParams labels reference and product images with separate 
     path: "/tmp/product.webp",
     detail: "original",
   });
+});
+
+test("createAnalyzeTurnParams keeps the legacy inspiration-only contract in style composition mode", () => {
+  const params = createAnalyzeTurnParams({
+    threadId: "thr_1",
+    imagePath: "/tmp/reference.png",
+    skillPath: "/tmp/skill/SKILL.md",
+    transferMode: "style_composition",
+  });
+
+  assert.match(params.input[0].text, /inspiration_only/);
+  assert.match(params.input[0].text, /构图、光影、色彩、环境和可迁移风格/);
+  assert.match(params.input[0].text, /允许更换主体和叙事/);
+  assert.doesNotMatch(params.input[0].text, /content_reference/);
+});
+
+test("createAnalyzeTurnParams requires and records subject-swap truth", () => {
+  assert.throws(
+    () => createAnalyzeTurnParams({
+      threadId: "thr_1",
+      imagePath: "/tmp/reference.png",
+      skillPath: "/tmp/skill/SKILL.md",
+      transferMode: "subject_swap",
+    }),
+    /replacementSubject|替换主体/,
+  );
+
+  const params = createAnalyzeTurnParams({
+    threadId: "thr_1",
+    imagePath: "/tmp/reference.png",
+    skillPath: "/tmp/skill/SKILL.md",
+    transferMode: "subject_swap",
+    replacementSubject: "红色机械鸟",
+  });
+  assert.match(params.input[0].text, /subject_swap/);
+  assert.match(params.input[0].text, /user_or_project_truth/);
+  assert.match(params.input[0].text, /红色机械鸟/);
+});
+
+test("editorRecipeSchema follows the strict response-format object profile recursively", () => {
+  function inspect(schema, location = "$") {
+    if (schema.type === "object") {
+      const keys = Object.keys(schema.properties ?? {}).sort();
+      assert.ok(keys.length > 0, `${location} must have fixed properties`);
+      assert.equal(schema.additionalProperties, false, `${location} must close additional properties`);
+      assert.deepEqual([...(schema.required ?? [])].sort(), keys, `${location} required must match properties`);
+      for (const [key, child] of Object.entries(schema.properties)) inspect(child, `${location}.${key}`);
+    }
+    if (schema.type === "array") inspect(schema.items, `${location}[]`);
+  }
+
+  inspect(editorRecipeSchema);
+  assert.equal(editorRecipeSchema.properties.transferMode.type, "string");
+  assert.deepEqual(
+    editorRecipeSchema.properties.transferMode.enum,
+    ["content_fidelity", "style_composition", "subject_swap"],
+  );
 });
 
 test("createProductMatchTurnParams replaces product truth while preserving locks and stable ids", () => {

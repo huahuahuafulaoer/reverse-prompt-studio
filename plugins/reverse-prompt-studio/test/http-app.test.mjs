@@ -71,12 +71,20 @@ test("HTTP app uploads an image, analyzes it, and revises the same run", async (
     assert.equal(productPreview.headers.get("content-type"), "image/webp");
     assert.equal(productPreview.headers.get("cache-control"), "no-store");
 
+    const missingReplacementResponse = await fetch(`${origin}/api/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: upload.runId, transferMode: "subject_swap" }),
+    });
+    assert.equal(missingReplacementResponse.status, 400);
+
     const analyzed = await fetch(`${origin}/api/analyze`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runId: upload.runId }),
+      body: JSON.stringify({ runId: upload.runId, transferMode: "content_fidelity" }),
     }).then((response) => response.json());
     assert.equal(analyzed.recipe.title, "Fake product-aware result");
+    assert.equal(analyzed.recipe.transferMode, "content_fidelity");
 
     const matched = await fetch(`${origin}/api/product-match`, {
       method: "POST",
@@ -93,6 +101,27 @@ test("HTTP app uploads an image, analyzes it, and revises the same run", async (
       body: JSON.stringify({ runId: upload.runId, recipe: matched.recipe }),
     }).then((response) => response.json());
     assert.equal(revised.recipe.title, "Fake revised result");
+
+    const swapUpload = await fetch(`${origin}/api/upload`, {
+      method: "POST",
+      headers: { "content-type": "image/png" },
+      body: Buffer.from("swap-reference"),
+    }).then((response) => response.json());
+    const swapped = await fetch(`${origin}/api/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        runId: swapUpload.runId,
+        transferMode: "subject_swap",
+        replacementSubject: "红色机械鸟",
+      }),
+    }).then((response) => response.json());
+    assert.equal(swapped.recipe.transferMode, "subject_swap");
+    assert.deepEqual(swapped.recipe.contentAnchors.subject, {
+      value: "红色机械鸟",
+      preserve: true,
+      sourceRole: "user_or_project_truth",
+    });
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     service.close();

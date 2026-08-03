@@ -126,6 +126,20 @@ rl.on("line", (line) => {
       !productMatched && message.params.input.some(
         (item) => item.type === "text" && item.text.includes("product_truth"),
       );
+    const styleComposition = promptText.includes("transferMode 是 style_composition")
+      || promptText.includes('"transferMode":"style_composition"');
+    const subjectSwap = promptText.includes("transferMode 是 subject_swap")
+      || promptText.includes('"transferMode":"subject_swap"');
+    const replacementSubject = promptText.match(/替换主体“([^”]+)”/)?.[1]
+      ?? promptText.match(/"subject":\{"value":"([^"]+)"/)?.[1]
+      ?? "替换主体";
+    const transferMode = styleComposition
+      ? "style_composition"
+      : subjectSwap
+        ? "subject_swap"
+        : "content_fidelity";
+    const contentSourceRole = subjectSwap ? "user_or_project_truth" : "content_reference";
+    const preservesContent = !styleComposition;
     const recipe = {
       schema: "reverse-image-prompt/editor-v1",
       title: productMatched
@@ -135,7 +149,58 @@ rl.on("line", (line) => {
           : revised
             ? "Fake revised result"
             : "Fake result",
+      transferMode,
+      contentAnchors: {
+        subject: {
+          value: styleComposition ? "" : subjectSwap ? replacementSubject : "测试主体",
+          preserve: preservesContent,
+          sourceRole: styleComposition ? "not_applicable" : contentSourceRole,
+        },
+        action: {
+          value: styleComposition ? "" : "测试动作",
+          preserve: preservesContent,
+          sourceRole: styleComposition ? "not_applicable" : "content_reference",
+        },
+        interaction: {
+          value: styleComposition ? "" : "测试交互",
+          preserve: preservesContent,
+          sourceRole: styleComposition ? "not_applicable" : "content_reference",
+        },
+        scene: {
+          value: styleComposition ? "" : "测试场景",
+          preserve: preservesContent,
+          sourceRole: styleComposition ? "not_applicable" : "content_reference",
+        },
+      },
       sections: [
+        {
+          id: "S",
+          label: "主体",
+          fields: [
+            {
+              id: "S01",
+              label: "主体",
+              value: subjectSwap ? replacementSubject : "测试主体",
+              confidence: "high",
+              control: "text",
+              locked: false,
+            },
+          ],
+        },
+        {
+          id: "A",
+          label: "动作",
+          fields: [
+            {
+              id: "A01",
+              label: "动作",
+              value: "测试动作",
+              confidence: "high",
+              control: "text",
+              locked: false,
+            },
+          ],
+        },
         {
           id: "C",
           label: "构图",

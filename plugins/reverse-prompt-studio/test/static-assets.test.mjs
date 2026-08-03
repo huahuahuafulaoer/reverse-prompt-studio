@@ -80,6 +80,21 @@ test("the source pane has a compact product-truth input and explicit match actio
   assert.match(css, /grid-template-columns:\s*64px\s+minmax\(0, 1fr\)\s+auto/);
 });
 
+test("reverse prompt mode controls default to content fidelity and submit subject-swap truth", async () => {
+  const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+
+  assert.match(html, /id="transferMode"/);
+  assert.match(html, /value="content_fidelity"[^>]*selected/);
+  assert.match(html, /value="style_composition"/);
+  assert.match(html, /value="subject_swap"/);
+  assert.match(html, /id="replacementSubjectField"[^>]*hidden/);
+  assert.match(html, /id="replacementSubject"/);
+  assert.match(script, /transferMode:\s*"content_fidelity"/);
+  assert.match(script, /replacementSubject/);
+  assert.match(script, /JSON\.stringify\(\{[\s\S]*runId: state\.runId,[\s\S]*transferMode: state\.transferMode,[\s\S]*replacementSubject: state\.replacementSubject/);
+});
+
 test("image replacement switches runs only after upload succeeds", async () => {
   const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
   const acceptSource = script.slice(

@@ -32,6 +32,8 @@ const state = {
   productPreviewUrl: null,
   hasProduct: false,
   productApplied: false,
+  transferMode: "content_fidelity",
+  replacementSubject: "",
   analysisStartedAt: null,
   analysisTimer: null,
   update: null,
@@ -78,6 +80,9 @@ const elements = {
   dropEmpty: document.querySelector("#dropEmpty"),
   sourcePreview: document.querySelector("#sourcePreview"),
   replaceHint: document.querySelector("#replaceHint"),
+  transferMode: document.querySelector("#transferMode"),
+  replacementSubjectField: document.querySelector("#replacementSubjectField"),
+  replacementSubject: document.querySelector("#replacementSubject"),
   productInputCard: document.querySelector("#productInputCard"),
   productInput: document.querySelector("#productInput"),
   productPlaceholder: document.querySelector("#productPlaceholder"),
@@ -141,6 +146,18 @@ elements.productInput.addEventListener("change", () => {
   if (file) acceptProductImage(file);
 });
 
+elements.transferMode.addEventListener("change", () => {
+  state.transferMode = elements.transferMode.value;
+  syncTransferModeControls();
+  persistLocalState();
+});
+
+elements.replacementSubject.addEventListener("input", () => {
+  state.replacementSubject = elements.replacementSubject.value;
+  syncTransferModeControls();
+  persistLocalState();
+});
+
 for (const eventName of ["dragenter", "dragover"]) {
   elements.dropZone.addEventListener(eventName, (event) => {
     event.preventDefault();
@@ -199,6 +216,7 @@ eventSource.addEventListener("codex", (event) => {
 eventSource.onerror = () => setConnection(false);
 
 restoreLocalState();
+syncTransferModeControls();
 checkForUpdates();
 initializeFinishWorkbench();
 
@@ -380,6 +398,10 @@ function restoreProductPreview(previousProductState) {
 
 async function analyzeImage() {
   if (!state.runId || state.busy) return;
+  if (state.transferMode === "subject_swap" && !state.replacementSubject.trim()) {
+    elements.replacementSubject.focus();
+    return showToast("请填写替换主体");
+  }
   setBusy(true, "Codex 正在分析");
   startAnalysisExperience({
     label: "正在联系 Codex",
@@ -389,7 +411,11 @@ async function analyzeImage() {
     const result = await fetchJson("/api/analyze", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ runId: state.runId }),
+      body: JSON.stringify({
+        runId: state.runId,
+        transferMode: state.transferMode,
+        replacementSubject: state.replacementSubject,
+      }),
     });
     applyResult(result);
     if (state.hasProduct) state.productApplied = true;
@@ -713,12 +739,29 @@ function failAnalysisExperience(detail) {
 
 function setBusy(busy, label) {
   state.busy = busy;
-  elements.analyzeButton.disabled = busy || !state.runId;
+  elements.analyzeButton.disabled = busy || !canAnalyze();
   elements.clearButton.disabled = busy || !state.runId;
   if (label) elements.activityState.textContent = label;
   syncBusyControls(busy);
   syncProductControls();
+  syncTransferModeControls();
   updateChangeCount();
+}
+
+function canAnalyze() {
+  return Boolean(state.runId)
+    && (state.transferMode !== "subject_swap" || Boolean(state.replacementSubject.trim()));
+}
+
+function syncTransferModeControls() {
+  const subjectSwap = state.transferMode === "subject_swap";
+  elements.transferMode.value = state.transferMode;
+  elements.transferMode.disabled = state.busy;
+  elements.replacementSubjectField.hidden = !subjectSwap;
+  elements.replacementSubject.value = state.replacementSubject;
+  elements.replacementSubject.disabled = state.busy;
+  elements.replacementSubject.required = subjectSwap;
+  elements.analyzeButton.disabled = state.busy || !canAnalyze();
 }
 
 function syncBusyControls(busy) {
@@ -759,6 +802,8 @@ function clearRun() {
   state.runId = null;
   state.recipe = null;
   state.compiledPrompt = "";
+  state.transferMode = "content_fidelity";
+  state.replacementSubject = "";
   if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
   state.previewUrl = null;
   resetProductState();
@@ -775,6 +820,7 @@ function clearRun() {
   elements.dropZone.classList.remove("is-analyzing");
   elements.analyzeButton.disabled = true;
   elements.clearButton.disabled = true;
+  syncTransferModeControls();
   localStorage.removeItem("reverse-prompt-studio-state");
 }
 
@@ -859,6 +905,8 @@ function persistLocalState() {
       compiledPrompt: state.compiledPrompt,
       hasProduct: state.hasProduct,
       productApplied: state.productApplied,
+      transferMode: state.transferMode,
+      replacementSubject: state.replacementSubject,
     }),
   );
 }
@@ -872,6 +920,8 @@ function restoreLocalState() {
     state.compiledPrompt = saved.compiledPrompt ?? "";
     state.hasProduct = Boolean(saved.hasProduct);
     state.productApplied = Boolean(saved.productApplied);
+    state.transferMode = saved.transferMode ?? "content_fidelity";
+    state.replacementSubject = saved.replacementSubject ?? "";
     elements.compiledPrompt.value = state.compiledPrompt;
     elements.sourcePreview.src = `/api/runs/${state.runId}/image`;
     elements.sourcePreview.hidden = false;
@@ -886,7 +936,7 @@ function restoreLocalState() {
       elements.productInputCard.classList.add("has-product");
       refreshProductStatus();
     }
-    elements.analyzeButton.disabled = false;
+    syncTransferModeControls();
     elements.clearButton.disabled = false;
     if (state.recipe) renderRecipe();
     syncProductControls();

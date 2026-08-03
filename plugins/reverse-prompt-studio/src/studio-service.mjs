@@ -19,6 +19,7 @@ import {
   compilePortablePrompt,
   normalizeRecipe,
   restoreLockedRecipeSections,
+  validateTransferRecipe,
   validateProductRecipe,
 } from "./recipe.mjs";
 
@@ -39,7 +40,10 @@ export class StudioService extends EventEmitter {
     this.#brandGradeSkillPath = brandGradeSkillPath;
   }
 
-  async analyze(runId) {
+  async analyze(runId, { transferMode = "content_fidelity", replacementSubject = "" } = {}) {
+    if (transferMode === "subject_swap" && !String(replacementSubject ?? "").trim()) {
+      throw new Error("subject_swap requires a replacementSubject（替换主体）");
+    }
     const imagePath = await this.#store.getImagePath(runId);
     const productImagePath = await this.#store.getProductImagePath(runId);
     const thread = await this.#appServer.startThread({ cwd: this.#workspaceRoot });
@@ -52,9 +56,12 @@ export class StudioService extends EventEmitter {
           imagePath,
           productImagePath,
           skillPath: this.#skillPath,
+          transferMode,
+          replacementSubject,
         }),
       ),
     );
+    validateTransferRecipe(recipe, { expectedMode: transferMode, replacementSubject });
     if (productImagePath) validateProductRecipe(recipe);
     await this.#store.saveRecipe(runId, recipe, "analysis");
     return {
@@ -65,13 +72,14 @@ export class StudioService extends EventEmitter {
   }
 
   async revise(runId, currentRecipe) {
+    const normalizedCurrentRecipe = normalizeRecipe(currentRecipe);
     const thread = await this.#getOrResumeThread(runId);
     const generatedRecipe = normalizeRecipe(
       await thread.run({
         input: [
           {
             type: "text",
-            text: buildRevisionPrompt(currentRecipe),
+            text: buildRevisionPrompt(normalizedCurrentRecipe),
             text_elements: [],
           },
           {
@@ -83,7 +91,13 @@ export class StudioService extends EventEmitter {
         outputSchema: editorRecipeSchema,
       }),
     );
-    const recipe = restoreLockedRecipeSections(generatedRecipe, currentRecipe);
+    const recipe = restoreLockedRecipeSections(generatedRecipe, normalizedCurrentRecipe);
+    validateTransferRecipe(recipe, {
+      expectedMode: normalizedCurrentRecipe.transferMode,
+      replacementSubject: normalizedCurrentRecipe.transferMode === "subject_swap"
+        ? normalizedCurrentRecipe.contentAnchors?.subject?.value
+        : "",
+    });
     await this.#store.saveRecipe(runId, recipe, "revision");
     return {
       threadId: thread.id,
@@ -93,6 +107,7 @@ export class StudioService extends EventEmitter {
   }
 
   async matchProduct(runId, currentRecipe) {
+    const normalizedCurrentRecipe = normalizeRecipe(currentRecipe);
     const productImagePath = await this.#store.getProductImagePath(runId);
     if (!productImagePath) throw new Error("请先添加产品图");
     const thread = await this.#getOrResumeThread(runId);
@@ -102,14 +117,20 @@ export class StudioService extends EventEmitter {
           threadId: thread.id,
           productImagePath,
           skillPath: this.#skillPath,
-          currentRecipe,
+          currentRecipe: normalizedCurrentRecipe,
         }),
       ),
     );
-    const recipe = restoreLockedRecipeSections(generatedRecipe, currentRecipe, {
+    const recipe = restoreLockedRecipeSections(generatedRecipe, normalizedCurrentRecipe, {
       authorizedSectionIds: ["P"],
     });
-    validateProductRecipe(recipe, { previousRecipe: currentRecipe });
+    validateTransferRecipe(recipe, {
+      expectedMode: normalizedCurrentRecipe.transferMode,
+      replacementSubject: normalizedCurrentRecipe.transferMode === "subject_swap"
+        ? normalizedCurrentRecipe.contentAnchors?.subject?.value
+        : "",
+    });
+    validateProductRecipe(recipe, { previousRecipe: normalizedCurrentRecipe });
     await this.#store.saveRecipe(runId, recipe, "product-match");
     return {
       threadId: thread.id,
