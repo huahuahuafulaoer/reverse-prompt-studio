@@ -362,6 +362,38 @@ test("StudioService audits, contracts, compares, and approves a brand-grade cand
   }
 });
 
+test("StudioService creates one full-frame finish-only prompt from the approved master", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "finish-only-service-"));
+  const { service, store, appServer } = await createBrandGradeHarness(root);
+
+  try {
+    const run = await store.createRun({
+      bytes: Buffer.from("source"),
+      contentType: "image/png",
+      workflow: "brand_grade",
+    });
+    assert.equal(typeof service.createFinishOnlyPlan, "function");
+    const result = await service.createFinishOnlyPlan({
+      runId: run.id,
+      direction: "更通透，但保持户外纪实质感",
+    });
+
+    assert.equal(result.schema, "finish-only-plan/v1");
+    assert.equal(result.sourceVersionId, "source-v1");
+    assert.match(result.platformPrompt, /已确认母版/);
+    assert.match(result.platformPrompt, /更通透，但保持户外纪实质感/);
+    const persisted = await store.loadLatestFinishOnlyPlan(run.id);
+    assert.deepEqual(persisted, result);
+    const persistedRun = await store.loadRun(run.id);
+    assert.equal(persistedRun.latestAudit, undefined);
+    assert.equal(persistedRun.latestContract, undefined);
+  } finally {
+    service.close();
+    appServer.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("StudioService blocks a contract for a later failed gate", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "brand-grade-gate-service-"));
   const { service, store, appServer } = await createBrandGradeHarness(root);

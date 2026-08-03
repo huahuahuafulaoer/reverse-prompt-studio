@@ -217,6 +217,19 @@ test("HTTP app supports the complete brand-grade lifecycle", async () => {
     );
     assert.equal(inputResponse.status, 201);
 
+    const finishPlanResponse = await fetch(
+      `${origin}/api/brand-grade/runs/${run.id}/finish-plan`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ direction: "自然通透、保留原有暖光" }),
+      },
+    );
+    assert.equal(finishPlanResponse.status, 200);
+    const finishPlan = await finishPlanResponse.json();
+    assert.equal(finishPlan.schema, "finish-only-plan/v1");
+    assert.match(finishPlan.platformPrompt, /自然通透、保留原有暖光/);
+
     const auditResponse = await fetch(`${origin}/api/brand-grade/runs/${run.id}/audit`, {
       method: "POST",
       headers: { "content-type": "application/json" },

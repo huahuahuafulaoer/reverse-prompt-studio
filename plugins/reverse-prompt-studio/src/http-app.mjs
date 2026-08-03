@@ -146,6 +146,18 @@ export function createStudioHttpServer({ service, store, publicDirectory, update
       const auditMatch = url.pathname.match(
         /^\/api\/brand-grade\/runs\/([0-9a-f-]{36})\/audit$/i,
       );
+
+      const finishPlanMatch = url.pathname.match(
+        /^\/api\/brand-grade\/runs\/([0-9a-f-]{36})\/finish-plan$/i,
+      );
+      if (request.method === "POST" && finishPlanMatch) {
+        const { direction } = await readJson(request);
+        return sendJson(response, 200, await service.createFinishOnlyPlan({
+          runId: finishPlanMatch[1],
+          direction,
+        }));
+      }
+
       if (request.method === "POST" && auditMatch) {
         return sendJson(response, 200, await service.auditBrandGrade({
           runId: auditMatch[1],

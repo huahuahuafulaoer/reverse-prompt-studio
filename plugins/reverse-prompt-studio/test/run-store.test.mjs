@@ -110,6 +110,41 @@ test("RunStore persists a complete brand-grade run lifecycle", async () => {
   }
 });
 
+test("RunStore versions finish-only plans without requiring an audit or repair contract", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "finish-only-store-"));
+  const store = new RunStore(root);
+
+  try {
+    const run = await store.createRun({
+      bytes: Buffer.from("source"),
+      contentType: "image/png",
+      workflow: "brand_grade",
+    });
+    const plan = {
+      schema: "finish-only-plan/v1",
+      sourceVersionId: "source-v1",
+      assessment: "只需完成生产级质感统一。",
+      priorities: [{
+        area: "technical_finish",
+        observation: "局部锐度不统一。",
+        treatment: "统一锐度与颗粒。",
+      }],
+      platformPrompt: "成稿精修提示词",
+    };
+
+    assert.equal(typeof store.saveFinishOnlyPlan, "function");
+    await store.saveFinishOnlyPlan(run.id, plan);
+    assert.deepEqual(await store.loadLatestFinishOnlyPlan(run.id), plan);
+    const persisted = await store.loadRun(run.id);
+    assert.equal(persisted.finishPlanVersions.length, 1);
+    assert.equal(persisted.latestFinishPlan, "finish-plans/plan-v1.json");
+    assert.equal(persisted.latestAudit, undefined);
+    assert.equal(persisted.latestContract, undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("RunStore rejects unsupported brand-grade input roles", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "brand-grade-role-store-"));
   const store = new RunStore(root);

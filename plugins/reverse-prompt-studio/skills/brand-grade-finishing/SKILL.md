@@ -1,13 +1,32 @@
 ---
 name: brand-grade-finishing
-description: Diagnose an AI-generated delivery image, route the earliest failed quality gate, and compare a repaired candidate without changing verified identity or structure.
+description: Analyze an approved final image for finish-only texture, light, tone, and production-quality improvements without changing its content or structure.
 ---
 
 # Brand-Grade Finishing
 
-Read `references/output-contract.md` before returning a report.
+Follow the output schema requested by the turn. `finish-only-plan/v1` is the default product flow. The older audit and comparison schemas remain available only for stored-run compatibility and use `references/output-contract.md`.
 
-## Evidence policy
+## Default: finish-only plan
+
+- Treat the input as an approved, semantically complete master. The subject, story, art direction, layout, and scene are already decided.
+- Never propose changes to identity, face, body, pose, product, equipment, text, logo, crop, camera, composition, geometry, scene structure, or object placement.
+- Analyze only production finish: texture naturalism, existing skin and material detail, light coherence, local tonal shaping, color grade, depth separation, noise, sharpness, grain, edges, and dynamic range.
+- Return `finish-only-plan/v1` with one short assessment and 1-4 evidence-based priorities. Do not write the final platform prompt; the Studio compiles immutable locks into it.
+- Name observable evidence instead of saying only “AI-looking” or “low quality.”
+- Keep the plan short. Do not request a new composition, a white/clay reconstruction, hard-structure rerendering, or a new visual concept.
+
+## Finish quality rules
+
+- Preserve macro form first, then meso structure such as folds, seams, pores, strata, and contact transitions. Micro detail appears only where focus, distance, light, and material justify it.
+- Skin keeps local pores, tonal variation, natural transitions, and facial specificity. Do not recommend global smoothing, global sharpening, HDR, uniform high-frequency texture, or cosmetic replacement.
+- Different materials keep distinct frequency, reflectance, roughness, and edge behavior. Texture must never replace form or appear as repeated worm, fingerprint, sandpaper, or etched patterns.
+- Highlights reveal existing material; shadows retain layers. Subject and environment must share one believable optical world.
+- Prefer selective local contrast and a detail-density gradient over globally stronger contrast, clarity, or sharpness.
+
+## Legacy audit and comparison
+
+### Evidence policy
 
 - Treat each image as exactly one primary role supplied in the request.
 - `edit_target` is the image being judged, never product truth by itself.
@@ -16,7 +35,7 @@ Read `references/output-contract.md` before returning a report.
 - Separate every statement into `verified`, `userProvided`, `inferred`, `unknown`, or `humanReview`.
 - Never invent an unseen surface, label, body part, product feature, or campaign requirement.
 
-## Sequential gates
+### Sequential gates
 
 Evaluate in this order:
 
@@ -27,7 +46,7 @@ Evaluate in this order:
 
 The earliest FAIL is the repair target. If no gate fails, the earliest HOLD is the target. Do not recommend polishing a later gate to hide an earlier failure.
 
-## Findings
+### Findings
 
 - Cite visible evidence; do not use vague labels such as “AI 感重” without the observable cause.
 - Each finding changes one coherent variable group and declares every affected path.
@@ -35,7 +54,7 @@ The earliest FAIL is the repair target. If no gate fails, the earliest HOLD is t
 - `humanReview` is true for brand, legal, copy, or campaign intent that cannot be established visually.
 - A PASS gate contains no findings.
 
-## Comparison
+### Comparison
 
 - Compare the candidate against the source, the selected repair contract, and all locked paths.
 - Any visible drift in a locked path prevents PASS.

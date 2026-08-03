@@ -18,13 +18,6 @@ import {
   shouldShowUpdate,
   updateCommandText,
 } from "/update-state.js";
-import {
-  canApproveCandidate,
-  friendlyFinishError,
-  presentAudit,
-  presentComparison,
-  repairActionState,
-} from "/finish-state.js";
 
 const ANALYSIS_STEPS = ["本地图片", "Codex 接收", "视觉拆解", "生成字段"];
 
@@ -50,29 +43,14 @@ const finish = {
   runId: null,
   sourceFile: null,
   sourcePreviewUrl: null,
-  audit: null,
-  selectedFinding: null,
-  contract: null,
-  candidateId: null,
-  candidatePreviewUrl: null,
-  comparison: null,
+  plan: null,
   progressTimer: null,
 };
 
 const finishProgressMessages = [
-  "检查真实感",
-  "检查画面表现",
-  "检查品牌表达",
-  "检查交付细节",
-];
-
-const finishEvidenceRoles = [
-  ["product_truth", "产品真值"],
-  ["subject_reference", "人物 / 主体真值"],
-  ["style_reference", "风格参考"],
-  ["composition_reference", "构图参考"],
-  ["material_reference", "材质参考"],
-  ["hard_structure_reference", "硬结构参考"],
+  "正在查看画面质感",
+  "正在梳理光影与材质",
+  "正在生成精修方案",
 ];
 
 const elements = {
@@ -123,24 +101,15 @@ const finishElements = {
   sourceInput: document.querySelector("#finish-source-input"),
   dropzone: document.querySelector("#finish-dropzone"),
   sourcePreview: document.querySelector("#finish-source-preview"),
-  brief: document.querySelector("#finish-brief"),
-  evidenceList: document.querySelector("#evidence-list"),
-  addEvidence: document.querySelector("#add-evidence"),
+  controls: document.querySelector("#finish-controls"),
+  direction: document.querySelector("#finish-direction"),
   analyze: document.querySelector("#finish-analyze"),
   progress: document.querySelector("#finish-progress"),
   progressTitle: document.querySelector("#finish-progress-title"),
   results: document.querySelector("#finish-results"),
-  resultTitle: document.querySelector("#finish-result-title"),
-  gateRail: document.querySelector("#gate-rail"),
-  findingList: document.querySelector("#finding-list"),
-  repairBar: document.querySelector("#repair-bar"),
-  repairTitle: document.querySelector("#repair-title"),
-  copyContract: document.querySelector("#copy-repair-contract"),
-  candidatePanel: document.querySelector("#candidate-panel"),
-  candidateInput: document.querySelector("#candidate-input"),
-  candidateComparison: document.querySelector("#candidate-comparison"),
-  candidateStatus: document.querySelector("#candidate-status"),
-  approveCandidate: document.querySelector("#approve-candidate"),
+  summary: document.querySelector("#finish-summary"),
+  priorities: document.querySelector("#finish-priorities"),
+  copyPrompt: document.querySelector("#copy-finish-prompt"),
 };
 
 elements.imageInput.addEventListener("change", () => {
@@ -1062,14 +1031,8 @@ function initializeFinishWorkbench() {
       candidate.type.startsWith("image/"));
     if (file) uploadFinishSource(file);
   });
-  finishElements.addEvidence.addEventListener("click", addEvidenceRow);
   finishElements.analyze.addEventListener("click", analyzeFinish);
-  finishElements.candidateInput.addEventListener("change", () => {
-    const [file] = finishElements.candidateInput.files;
-    if (file) uploadCandidate(file);
-  });
-  finishElements.approveCandidate.addEventListener("click", approveCandidate);
-  finishElements.copyContract.addEventListener("click", copyRepairContract);
+  finishElements.copyPrompt.addEventListener("click", copyFinishPrompt);
 }
 
 function switchWorkspace(mode) {
@@ -1081,7 +1044,6 @@ function switchWorkspace(mode) {
   for (const workspace of finishElements.workspaces) {
     workspace.hidden = workspace.dataset.workspace !== mode;
   }
-  finishElements.repairBar.hidden = mode !== "brand-grade" || !finish.contract;
 }
 
 function validateFinishImage(file) {
@@ -1098,7 +1060,7 @@ function validateFinishImage(file) {
 
 async function uploadFinishSource(file) {
   if (!validateFinishImage(file)) return;
-  setFinishBusy(true, "正在保存待精修成图");
+  setFinishBusy(true);
   try {
     const run = await requestBytes("/api/brand-grade/runs", file, file.type);
     const previewUrl = URL.createObjectURL(file);
@@ -1110,7 +1072,7 @@ async function uploadFinishSource(file) {
     finishElements.sourcePreview.src = previewUrl;
     finishElements.sourcePreview.hidden = false;
     finishElements.dropzone.classList.add("has-source");
-    finishElements.brief.hidden = false;
+    finishElements.controls.hidden = false;
     finishElements.analyze.disabled = false;
   } catch (error) {
     reportFinishError(error, "upload");
@@ -1122,87 +1084,10 @@ async function uploadFinishSource(file) {
 
 function resetFinishOutput() {
   stopFinishProgress();
-  finish.audit = null;
-  finish.selectedFinding = null;
-  finish.contract = null;
-  finish.candidateId = null;
-  finish.comparison = null;
-  if (finish.candidatePreviewUrl) URL.revokeObjectURL(finish.candidatePreviewUrl);
-  finish.candidatePreviewUrl = null;
-  finishElements.evidenceList.replaceChildren();
+  finish.plan = null;
   finishElements.results.hidden = true;
-  finishElements.repairBar.hidden = true;
-  finishElements.candidatePanel.hidden = true;
-  finishElements.candidatePanel.dataset.state = "";
-  finishElements.candidateComparison.replaceChildren();
-  finishElements.approveCandidate.disabled = true;
-  finishElements.approveCandidate.textContent = "批准为交付源图";
-  finishElements.candidateStatus.textContent = "导入修复图后，会判断是否可以交付。";
-}
-
-function addEvidenceRow() {
-  const row = document.createElement("div");
-  row.className = "evidence-row";
-
-  const roleLabel = document.createElement("label");
-  roleLabel.textContent = "参考类型";
-  const select = document.createElement("select");
-  select.setAttribute("aria-label", "参考类型");
-  for (const [value, label] of finishEvidenceRoles) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = label;
-    select.append(option);
-  }
-  roleLabel.append(select);
-
-  const fileLabel = document.createElement("label");
-  fileLabel.className = "evidence-file";
-  const fileName = document.createElement("span");
-  fileName.textContent = "选择图片";
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "image/png,image/jpeg,image/webp";
-  input.setAttribute("aria-label", "证据图片");
-  input.addEventListener("change", () => {
-    delete row.dataset.inputId;
-    fileName.textContent = input.files[0]?.name ?? "选择图片";
-  });
-  fileLabel.append(fileName, input);
-
-  const remove = document.createElement("button");
-  remove.type = "button";
-  remove.className = "evidence-remove";
-  remove.setAttribute("aria-label", "移除这条证据");
-  remove.textContent = "×";
-  remove.addEventListener("click", () => row.remove());
-
-  row.append(roleLabel, fileLabel, remove);
-  finishElements.evidenceList.append(row);
-}
-
-function readFinishBrief() {
-  return Object.fromEntries(
-    [...finishElements.brief.querySelectorAll(".brief-grid input")]
-      .map((input) => [input.name, input.value.trim()]),
-  );
-}
-
-async function uploadEvidenceRows(runId) {
-  const rows = [...finishElements.evidenceList.querySelectorAll(".evidence-row")];
-  for (const row of rows) {
-    if (row.dataset.inputId) continue;
-    const file = row.querySelector('input[type="file"]').files[0];
-    if (!file) continue;
-    if (!validateFinishImage(file)) throw new Error("证据图片格式或大小不符合要求");
-    const role = row.querySelector("select").value;
-    const input = await requestBytes(
-      `/api/brand-grade/runs/${runId}/inputs?role=${encodeURIComponent(role)}`,
-      file,
-      file.type,
-    );
-    row.dataset.inputId = input.id;
-  }
+  finishElements.summary.textContent = "";
+  finishElements.priorities.replaceChildren();
 }
 
 async function analyzeFinish() {
@@ -1210,20 +1095,15 @@ async function analyzeFinish() {
   showFinishProgress();
   setFinishBusy(true);
   try {
-    await uploadEvidenceRows(finish.runId);
-    finish.audit = await requestJson(
-      `/api/brand-grade/runs/${finish.runId}/audit`,
+    finish.plan = await requestJson(
+      `/api/brand-grade/runs/${finish.runId}/finish-plan`,
       "POST",
-      readFinishBrief(),
+      { direction: finishElements.direction.value.trim() },
     );
-    const presentation = presentAudit(finish.audit);
-    finishElements.resultTitle.textContent = presentation.title;
-    renderGateRail(presentation.gates);
-    renderFindings(finish.audit, presentation);
-    finishElements.results.hidden = false;
+    renderFinishPlan(finish.plan);
   } catch (error) {
-    reportFinishError(error, "audit");
-    finishElements.brief.hidden = false;
+    reportFinishError(error, "plan");
+    finishElements.controls.hidden = false;
   } finally {
     stopFinishProgress();
     setFinishBusy(false);
@@ -1234,8 +1114,6 @@ function showFinishProgress() {
   stopFinishProgress();
   finishElements.progress.hidden = false;
   finishElements.results.hidden = true;
-  finishElements.repairBar.hidden = true;
-  finishElements.candidatePanel.hidden = true;
   let index = 0;
   finishElements.progressTitle.textContent = finishProgressMessages[index];
   finish.progressTimer = window.setInterval(() => {
@@ -1250,194 +1128,60 @@ function stopFinishProgress() {
   finishElements.progress.hidden = true;
 }
 
-function renderGateRail(rail) {
-  finishElements.gateRail.replaceChildren();
-  for (const gate of rail) {
+const finishAreaLabels = {
+  texture_realism: "纹理真实感",
+  skin_people: "人物与皮肤",
+  material_separation: "材质区分",
+  light_tone: "光影调性",
+  technical_finish: "成像完成度",
+};
+
+function renderFinishPlan(plan) {
+  finishElements.summary.textContent = plan.assessment;
+  finishElements.priorities.replaceChildren();
+  for (const priority of plan.priorities) {
     const item = document.createElement("li");
-    item.className = "gate-rail__item";
-    item.dataset.current = String(gate.isCurrent);
-    item.dataset.tone = gate.tone;
-    item.setAttribute("aria-current", gate.isCurrent ? "step" : "false");
-    item.setAttribute("aria-label", `${gate.label}：${gate.status}`);
-    const top = document.createElement("div");
-    top.className = "gate-rail__top";
-    top.append(createTextElement("span", "gate-rail__status", `${gate.icon} ${gate.status}`));
+    item.className = "finish-priority";
     item.append(
-      top,
-      createTextElement("strong", "gate-rail__name", gate.label),
+      createTextElement("span", "finish-priority__area", finishAreaLabels[priority.area] ?? "精修重点"),
+      createTextElement("strong", "finish-priority__observation", priority.observation),
+      createTextElement("p", "finish-priority__treatment", priority.treatment),
     );
-    finishElements.gateRail.append(item);
+    finishElements.priorities.append(item);
   }
+  finishElements.results.hidden = false;
+  finishElements.results.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function renderFindings(audit, presentation) {
-  finishElements.findingList.replaceChildren();
-  const activeGate = audit.gates.find((gate) => gate.id === audit.earliestFailureGate);
-  if (!activeGate) {
-    const pass = createTextElement("div", "finish-all-pass", "✓ 没有需要处理的问题");
-    finishElements.findingList.append(pass);
-    return;
-  }
-
-  activeGate.findings.forEach((finding, index) => {
-    const visible = presentation.findings[index];
-    const card = document.createElement("article");
-    card.className = "finding-card";
-    const heading = document.createElement("div");
-    heading.className = "finding-card__heading";
-    heading.append(createTextElement("strong", "", visible.title));
-    const evidence = createTextElement("p", "finding-card__evidence", `现象：${visible.observation}`);
-    const target = createTextElement("p", "finding-card__target", `建议：${visible.suggestion}`);
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "button button--primary";
-    button.textContent = visible.action.label;
-    button.disabled = !visible.action.enabled;
-    button.setAttribute("aria-label", `${visible.action.label}：${visible.title}`);
-    button.addEventListener("click", () => selectFinding(finding));
-    card.append(heading, evidence, target, button);
-    finishElements.findingList.append(card);
-  });
-}
-
-async function selectFinding(finding) {
-  const activeGate = finish.audit?.gates.find((gate) => gate.id === finish.audit.earliestFailureGate);
-  if (!activeGate?.findings.some((item) => item.id === finding.id)) {
-    return showToast("请先处理当前显示的问题");
-  }
-  const action = repairActionState(finding);
-  finish.selectedFinding = finding;
-  if (!action.enabled) return showToast(action.label);
-
-  setFinishBusy(true, "正在生成修复指令");
+async function copyFinishPrompt() {
+  if (!finish.plan?.platformPrompt) return;
+  const originalLabel = finishElements.copyPrompt.textContent;
   try {
-    finish.contract = await requestJson(
-      `/api/brand-grade/runs/${finish.runId}/contracts`,
-      "POST",
-      { findingId: finding.id },
-    );
-    finishElements.repairTitle.textContent = finding.title;
-    finishElements.repairBar.hidden = false;
-    finishElements.candidatePanel.hidden = false;
-    finishElements.candidateStatus.textContent = "导入修复图后，会判断是否可以交付。";
-    finishElements.candidatePanel.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (error) {
-    reportFinishError(error, "contract");
-  } finally {
-    setFinishBusy(false);
-  }
-}
-
-async function copyRepairContract() {
-  if (!finish.contract?.platformPrompt) return;
-  const originalLabel = finishElements.copyContract.textContent;
-  try {
-    await navigator.clipboard.writeText(finish.contract.platformPrompt);
-    finishElements.copyContract.textContent = "已复制";
+    await navigator.clipboard.writeText(finish.plan.platformPrompt);
+    finishElements.copyPrompt.textContent = "已复制";
     window.setTimeout(() => {
-      finishElements.copyContract.textContent = originalLabel;
+      finishElements.copyPrompt.textContent = originalLabel;
     }, 1500);
   } catch {
     showToast("复制失败，请检查浏览器剪贴板权限");
   }
 }
 
-async function uploadCandidate(file) {
-  if (!finish.contract || !validateFinishImage(file)) return;
-  setFinishBusy(true, "正在比较候选图");
-  finishElements.candidateStatus.textContent = "正在检查修复图…";
-  try {
-    const candidate = await requestBytes(
-      `/api/brand-grade/runs/${finish.runId}/candidates`,
-      file,
-      file.type,
-    );
-    finish.candidateId = candidate.id;
-    finish.comparison = await requestJson(
-      `/api/brand-grade/runs/${finish.runId}/candidates/${candidate.id}/compare`,
-      "POST",
-    );
-    const previewUrl = URL.createObjectURL(file);
-    if (finish.candidatePreviewUrl) URL.revokeObjectURL(finish.candidatePreviewUrl);
-    finish.candidatePreviewUrl = previewUrl;
-    renderComparison(finish.comparison, previewUrl);
-    finishElements.approveCandidate.disabled = !canApproveCandidate(finish.comparison);
-  } catch (error) {
-    finishElements.candidateStatus.textContent = "修复图检查未完成。";
-    reportFinishError(error, "comparison");
-  } finally {
-    setFinishBusy(false);
-    finishElements.candidateInput.value = "";
-  }
-}
-
-function renderComparison(comparison, candidatePreviewUrl) {
-  finishElements.candidateComparison.replaceChildren();
-  const images = document.createElement("div");
-  images.className = "comparison-images";
-  for (const [label, src] of [
-    ["原始源图", finish.sourcePreviewUrl],
-    ["修复候选", candidatePreviewUrl],
-  ]) {
-    const figure = document.createElement("figure");
-    const image = document.createElement("img");
-    image.src = src;
-    image.alt = label;
-    const caption = document.createElement("figcaption");
-    caption.textContent = label;
-    figure.append(image, caption);
-    images.append(figure);
-  }
-
-  const qc = document.createElement("div");
-  qc.className = "comparison-result";
-  const visible = presentComparison(comparison);
-  qc.dataset.tone = visible.approvable ? "positive" : "critical";
-  qc.append(
-    createTextElement("strong", "comparison-result__title", visible.outcome),
-    createTextElement("p", "comparison-result__reason", visible.reason),
-  );
-  finishElements.candidateComparison.append(images, qc);
-
-  finishElements.candidateStatus.textContent = visible.approvable
-    ? "可以批准为交付图。"
-    : "请调整后重新导入。";
-}
-
-async function approveCandidate() {
-  if (!finish.candidateId || !canApproveCandidate(finish.comparison)) return;
-  setFinishBusy(true, "正在批准候选图");
-  try {
-    await requestJson(
-      `/api/brand-grade/runs/${finish.runId}/candidates/${finish.candidateId}/approve`,
-      "POST",
-    );
-    finishElements.candidatePanel.dataset.state = "approved";
-    finishElements.approveCandidate.textContent = "已批准";
-    finishElements.approveCandidate.disabled = true;
-    finishElements.candidateStatus.textContent = "✓ 已批准，可以进入后续处理。";
-  } catch (error) {
-    reportFinishError(error, "approval");
-  } finally {
-    setFinishBusy(false);
-  }
-}
-
-function setFinishBusy(busy, label) {
+function setFinishBusy(busy) {
   finishElements.sourceInput.disabled = busy;
-  finishElements.addEvidence.disabled = busy;
+  finishElements.direction.disabled = busy;
   finishElements.analyze.disabled = busy || !finish.runId;
-  finishElements.candidateInput.disabled = busy;
-  finishElements.copyContract.disabled = busy;
-  if (label) finishElements.candidateStatus.textContent = label;
-  for (const control of finishElements.evidenceList.querySelectorAll("input, select, button")) {
-    control.disabled = busy;
-  }
+  finishElements.copyPrompt.disabled = busy || !finish.plan;
 }
 
 function reportFinishError(error, context) {
-  console.error("Brand-grade action failed", { context, error });
-  showToast(friendlyFinishError(error, context));
+  console.error("Finish action failed", { context, error });
+  const message = String(error?.message ?? error ?? "");
+  if (/failed to fetch|network|connection|ECONN|JSON-RPC|连接|中断/i.test(message)) {
+    showToast("连接中断，请稍后重试");
+    return;
+  }
+  showToast(context === "upload" ? "图片上传失败，请重试" : "精修提示词生成失败，请重试");
 }
 
 async function requestBytes(url, bytes, contentType) {

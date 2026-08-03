@@ -154,44 +154,31 @@ test("image replacement switches runs only after upload succeeds", async () => {
   assert.doesNotMatch(acceptProduct, /catch \(error\) \{\s*resetProductState\(\)/);
 });
 
-test("brand grade workbench exposes the required controls", async () => {
+test("finish workbench asks only for the approved image and optional tone direction", async () => {
   const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
   assert.match(html, /data-mode="brand-grade"/);
   assert.match(html, /id="finish-dropzone"/);
+  assert.match(html, /id="finish-direction"/);
   assert.match(html, /id="finish-analyze"/);
-  assert.match(html, /id="gate-rail"/);
-  assert.match(html, /id="copy-repair-contract"/);
-  assert.match(html, /id="candidate-input"/);
-  assert.match(html, /id="approve-candidate"/);
+  assert.match(html, /id="finish-summary"/);
+  assert.match(html, /id="finish-priorities"/);
+  assert.match(html, /id="copy-finish-prompt"/);
+  assert.doesNotMatch(html, /id="gate-rail"|id="finding-list"|id="candidate-panel"/);
+  assert.doesNotMatch(html, /id="add-evidence"|name="channel"|name="audience"/);
+  assert.match(script, /\/finish-plan/);
+  assert.doesNotMatch(script, /async function selectFinding|async function uploadCandidate/);
 });
 
-test("brand grade markup and render paths omit backend-facing language", async () => {
+test("finish workbench presents one full-frame finishing action without diagnostic jargon", async () => {
   const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
   const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
-  const css = await readFile(path.join(projectDirectory, "public/styles.css"), "utf8");
   const brandMarkup = html.slice(html.indexOf('<main class="finish-workspace"'), html.indexOf("</main>", html.indexOf('<main class="finish-workspace"')));
-  const brandRender = script.slice(script.indexOf("function renderGateRail"), script.indexOf("function setFinishBusy"));
 
-  assert.doesNotMatch(brandMarkup, /DELIVERY IMAGE|MINIMUM BRIEF|SEQUENTIAL GATES|CANDIDATE QC|FAIL|HOLD|PASS|四层|质量门槛|最早失守/);
-  assert.doesNotMatch(brandRender, /changePaths\.join|drift\.path|comparison\.verdict|锁定路径|四层 PASS/);
-  assert.doesNotMatch(brandRender, /showToast\(error\.message\)/);
-  assert.match(brandMarkup, /id="finish-result-title"/);
-  assert.match(html, />\s*复制修复指令\s*</);
+  assert.match(brandMarkup, /成稿精修/);
+  assert.match(brandMarkup, /生成精修提示词/);
+  assert.match(brandMarkup, />\s*复制精修提示词\s*</);
+  assert.doesNotMatch(brandMarkup, /诊断|问题|修复图|批准|参考图|品牌气质|文案安全区|渠道|受众/);
+  assert.doesNotMatch(script, /presentAudit|presentComparison|repairActionState|canApproveCandidate/);
   assert.doesNotMatch(`${html}\n${script}`, /Codex App Server/);
-  assert.match(css, /\.finding-list\s*\{[^}]*padding-bottom:\s*0;/s);
-  assert.match(css, /gate-rail__item\[data-tone="positive"\]/);
-  assert.match(css, /gate-rail__item\[data-tone="caution"\]/);
-  assert.match(css, /gate-rail__item\[data-tone="critical"\]/);
-});
-
-test("creating a repair contract leaves the candidate panel in its QC-ready state", async () => {
-  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
-  const selectFinding = script.slice(
-    script.indexOf("async function selectFinding(finding)"),
-    script.indexOf("async function copyRepairContract()"),
-  );
-  assert.match(
-    selectFinding,
-    /candidateStatus\.textContent = "导入修复图后，会判断是否可以交付。"/,
-  );
 });

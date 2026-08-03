@@ -138,6 +138,23 @@ export class RunStore {
     return audit;
   }
 
+  async saveFinishOnlyPlan(id, plan) {
+    const run = await this.loadRun(id);
+    if (run.workflow !== "brand_grade") throw new Error("Run is not a brand-grade workflow");
+    const version = (run.finishPlanVersions?.length ?? 0) + 1;
+    const relativePath = path.join("finish-plans", `plan-v${version}.json`);
+    await mkdir(path.join(this.#runDirectory(id), "finish-plans"), { recursive: true });
+    await writeFile(
+      path.join(this.#runDirectory(id), relativePath),
+      `${JSON.stringify(plan, null, 2)}\n`,
+    );
+    run.finishPlanVersions = [...(run.finishPlanVersions ?? []), relativePath];
+    run.latestFinishPlan = relativePath;
+    run.updatedAt = new Date().toISOString();
+    await this.#writeRun(run);
+    return plan;
+  }
+
   async saveRepairContract(id, contract) {
     const run = await this.loadRun(id);
     const version = (run.contractVersions?.length ?? 0) + 1;
@@ -224,6 +241,14 @@ export class RunStore {
     const run = await this.loadRun(id);
     if (!run.latestAudit) throw new Error("Brand-grade audit is required");
     return JSON.parse(await readFile(await this.getStoredPath(id, run.latestAudit), "utf8"));
+  }
+
+  async loadLatestFinishOnlyPlan(id) {
+    const run = await this.loadRun(id);
+    if (!run.latestFinishPlan) throw new Error("Finish-only plan is required");
+    return JSON.parse(
+      await readFile(await this.getStoredPath(id, run.latestFinishPlan), "utf8"),
+    );
   }
 
   async loadLatestContract(id) {

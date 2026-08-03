@@ -183,7 +183,8 @@
 
       <main class="finish-workspace" data-workspace="brand-grade" hidden>
         <header class="finish-heading">
-          <h1>检查成图，修到可交付。</h1>
+          <h1>成稿精修</h1>
+          <p>只优化画质与光影调性，保持画面内容不变。</p>
         </header>
 
         <section class="finish-source">
@@ -195,75 +196,47 @@
               accept="image/png,image/jpeg,image/webp"
             />
             <span class="finish-dropzone__mark" aria-hidden="true">↗</span>
-            <strong>放入待精修成图</strong>
+            <strong>放入已经完成的图片</strong>
             <small>PNG · JPG · WEBP · 最大 20MB</small>
-            <img id="finish-source-preview" alt="待精修成图预览" hidden />
+            <img id="finish-source-preview" alt="成稿预览" hidden />
           </label>
         </section>
 
-        <section id="finish-brief" class="finish-brief" hidden>
-          <div class="brief-grid">
-            <label>渠道<input name="channel" placeholder="如 PDP / 社媒 / 海报" /></label>
-            <label>受众<input name="audience" placeholder="核心观看者" /></label>
-            <label>第一眼<input name="firstRead" placeholder="产品 / 人物 / 信息" /></label>
-            <label>品牌气质<input name="brandCharacter" placeholder="如 专业、克制、温暖" /></label>
-            <label>文案安全区<input name="copySafeArea" placeholder="如 右上 / 无" /></label>
-          </div>
-          <div id="evidence-list" class="evidence-list"></div>
-          <div class="finish-brief__actions">
-            <button id="add-evidence" type="button" class="button button--ghost">
-              添加参考图
-            </button>
+        <section id="finish-controls" class="finish-controls" hidden>
+          <label class="finish-direction" for="finish-direction">
+            <span>想要的画面调性 <small>可选</small></span>
+            <textarea
+              id="finish-direction"
+              rows="3"
+              placeholder="例如：光线更通透，肤色自然，保留户外商业摄影的真实质感"
+            ></textarea>
+          </label>
+          <div class="finish-controls__actions">
             <button id="finish-analyze" type="button" class="button button--primary">
-              开始品牌级诊断
+              生成精修提示词
             </button>
           </div>
         </section>
 
         <section id="finish-progress" class="finish-progress" hidden aria-live="polite">
           <span class="finish-progress__orb" aria-hidden="true"></span>
-          <strong id="finish-progress-title">检查真实感</strong>
+          <strong id="finish-progress-title">正在查看画面质感</strong>
         </section>
 
         <section id="finish-results" class="finish-results" hidden>
-          <div class="finish-section-heading finish-section-heading--compact">
-            <h2 id="finish-result-title">检查结果</h2>
-          </div>
-          <ol id="gate-rail" class="gate-rail"></ol>
-          <div id="finding-list" class="finding-list"></div>
-        </section>
-
-        <section id="candidate-panel" class="candidate-panel" hidden>
-          <div class="finish-section-heading">
-            <h2>导入修复图</h2>
-            <label class="button button--ghost candidate-upload">
-              选择修复图
-              <input
-                id="candidate-input"
-                class="finish-file-input"
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-              />
-            </label>
-          </div>
-          <div id="candidate-comparison" class="candidate-comparison"></div>
-          <div class="candidate-actions">
-            <p id="candidate-status">导入修复图后，会判断是否可以交付。</p>
-            <button id="approve-candidate" type="button" class="button button--primary" disabled>
-              批准为交付源图
+          <div class="finish-plan-heading">
+            <div>
+              <span>整图处理</span>
+              <h2>精修方案</h2>
+            </div>
+            <button id="copy-finish-prompt" type="button" class="button button--primary">
+              复制精修提示词
             </button>
           </div>
+          <p id="finish-summary" class="finish-summary"></p>
+          <ol id="finish-priorities" class="finish-priorities"></ol>
         </section>
       </main>
-
-      <aside id="repair-bar" class="repair-bar" hidden>
-        <div>
-          <strong id="repair-title"></strong>
-        </div>
-        <button id="copy-repair-contract" type="button" class="button button--primary">
-          复制修复指令
-        </button>
-      </aside>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

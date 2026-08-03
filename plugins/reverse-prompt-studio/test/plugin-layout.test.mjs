@@ -90,5 +90,8 @@ test("declares the brand-grade 0.4 release across runtime metadata", async () =>
     assert.match(packageMetadata.scripts.check, new RegExp(source.replace(".", "\\.")));
   }
   assert.match(readme, /品牌级精修/);
+  assert.match(readme, /生成精修提示词/);
+  assert.match(readme, /人物、产品、构图和场景内容保持不变/);
+  assert.doesNotMatch(readme, /最早失败层|单问题 contract|四层全部 PASS/);
   assert.match(readme, /不包含工具内直接出修复图/);
 });

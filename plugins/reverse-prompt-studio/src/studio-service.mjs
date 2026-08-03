@@ -5,13 +5,16 @@ import {
   editorRecipeSchema,
 } from "./codex-client.mjs";
 import {
+  compileFinishOnlyPrompt,
   createBrandGradeAuditTurnParams,
   createBrandGradeComparisonTurnParams,
+  createFinishOnlyPlanTurnParams,
 } from "./brand-grade-prompts.mjs";
 import {
   normalizeBrandGradeAuditTransport,
   validateBrandGradeAudit,
   validateBrandGradeComparison,
+  validateFinishOnlyPlan,
 } from "./brand-grade-schema.mjs";
 import { createRepairContract } from "./repair-contract.mjs";
 import {
@@ -175,6 +178,33 @@ export class StudioService extends EventEmitter {
     const audit = validateBrandGradeAudit(normalizeBrandGradeAuditTransport(raw));
     await this.#store.saveBrandGradeAudit(runId, audit);
     return audit;
+  }
+
+  async createFinishOnlyPlan({ runId, direction = "" }) {
+    const run = await this.#store.loadRun(runId);
+    if (run.workflow !== "brand_grade") {
+      throw new Error("Run is not a brand-grade workflow");
+    }
+    const normalizedDirection = String(direction ?? "").trim();
+    if (normalizedDirection.length > 1000) {
+      throw new Error("精修调性要求不能超过 1000 个字符");
+    }
+    const thread = await this.#appServer.startThread({ cwd: this.#workspaceRoot });
+    this.#attachThread(runId, thread);
+    await this.#store.saveThreadId(runId, thread.id);
+    const plan = validateFinishOnlyPlan(await thread.run(createFinishOnlyPlanTurnParams({
+      threadId: thread.id,
+      sourcePath: await this.#store.getImagePath(runId),
+      direction: normalizedDirection,
+      skillPath: this.#brandGradeSkillPath,
+    })));
+    const result = {
+      ...plan,
+      sourceVersionId: run.sourceVersionId,
+      platformPrompt: compileFinishOnlyPrompt({ plan, direction: normalizedDirection }),
+    };
+    await this.#store.saveFinishOnlyPlan(runId, result);
+    return result;
   }
 
   async createBrandGradeRepairContract({ runId, findingId }) {

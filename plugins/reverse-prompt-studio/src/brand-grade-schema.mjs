@@ -4,6 +4,20 @@ const VISUAL_STATE_GROUPS = Object.freeze([
   "M", "S", "A", "P", "C", "K", "L", "G", "E", "R", "T", "Q", "X",
 ]);
 const VISUAL_STATE_PATH_PATTERN = `^(?:${VISUAL_STATE_GROUPS.join("|")})\\.[^\\s.]+$`;
+const FINISH_ONLY_AREAS = Object.freeze([
+  "texture_realism",
+  "skin_people",
+  "material_separation",
+  "light_tone",
+  "technical_finish",
+]);
+const PROTECTED_CONTENT_TERMS = "人物|身份|面部|脸部|身体|姿态|动作|产品|装备|服装|文字|标志|logo|构图|裁切|镜头|场景|结构|几何|物体位置";
+const CONTENT_CHANGE_TERMS = "调整|改变|修改|更换|替换|移动|删除|增加|添加|重做|重绘|重构";
+const protectedContentChangePattern = new RegExp(
+  `(?:${CONTENT_CHANGE_TERMS})[^，。；\\n]{0,12}(?:${PROTECTED_CONTENT_TERMS})|(?:${PROTECTED_CONTENT_TERMS})[^，。；\\n]{0,12}(?:${CONTENT_CHANGE_TERMS})`,
+  "i",
+);
+const generativeReconstructionPattern = /白膜|clay\s*render|重新渲染|重建|rerender|reconstruct/i;
 export const INPUT_ROLES = Object.freeze([
   "edit_target",
   "product_truth",
@@ -198,6 +212,37 @@ export function validateBrandGradeComparison(report) {
   return report;
 }
 
+export function validateFinishOnlyPlan(plan) {
+  object(plan, "plan");
+  if (plan.schema !== "finish-only-plan/v1") {
+    throw new Error("schema must be finish-only-plan/v1");
+  }
+  string(plan.assessment, "assessment");
+  if (!Array.isArray(plan.priorities) || plan.priorities.length < 1 || plan.priorities.length > 4) {
+    throw new Error("priorities must contain 1-4 items");
+  }
+  const seenAreas = new Set();
+  plan.priorities.forEach((priority, index) => {
+    object(priority, `priorities[${index}]`);
+    if (!FINISH_ONLY_AREAS.includes(priority.area)) {
+      throw new Error(`priorities[${index}].area is invalid`);
+    }
+    if (seenAreas.has(priority.area)) {
+      throw new Error(`priorities[${index}].area is duplicated`);
+    }
+    seenAreas.add(priority.area);
+    string(priority.observation, `priorities[${index}].observation`);
+    string(priority.treatment, `priorities[${index}].treatment`);
+    if (protectedContentChangePattern.test(priority.treatment)) {
+      throw new Error(`priorities[${index}].treatment changes protected content`);
+    }
+    if (generativeReconstructionPattern.test(priority.treatment)) {
+      throw new Error(`priorities[${index}].treatment requests generative reconstruction`);
+    }
+  });
+  return plan;
+}
+
 const findingOutputSchema = {
   type: "object",
   additionalProperties: false,
@@ -334,6 +379,31 @@ export const brandGradeComparisonOutputSchema = {
           expected: { type: "string" },
           observed: { type: "string" },
           status: { type: "string", enum: ["PASS", "FAIL"] },
+        },
+      },
+    },
+  },
+};
+
+export const finishOnlyPlanOutputSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["schema", "assessment", "priorities"],
+  properties: {
+    schema: { type: "string", const: "finish-only-plan/v1" },
+    assessment: { type: "string" },
+    priorities: {
+      type: "array",
+      minItems: 1,
+      maxItems: 4,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["area", "observation", "treatment"],
+        properties: {
+          area: { type: "string", enum: FINISH_ONLY_AREAS },
+          observation: { type: "string" },
+          treatment: { type: "string" },
         },
       },
     },

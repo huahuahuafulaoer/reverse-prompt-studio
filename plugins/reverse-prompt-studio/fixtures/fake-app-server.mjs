@@ -106,6 +106,25 @@ function comparisonFixture() {
   };
 }
 
+function finishOnlyPlanFixture() {
+  return {
+    schema: "finish-only-plan/v1",
+    assessment: "画面内容已经完整，当前只需统一真实质感与光影完成度。",
+    priorities: [
+      {
+        area: "texture_realism",
+        observation: "局部表面存在重复、均匀的高频纹理。",
+        treatment: "保留原有大形和中层结构，仅清理重复纹理并让微细节随景深自然衰减。",
+      },
+      {
+        area: "light_tone",
+        observation: "主体与环境的局部对比和锐度略显割裂。",
+        treatment: "延续原有光线方向，统一局部对比、暗部层次和色温，不做全局 HDR。",
+      },
+    ],
+  };
+}
+
 rl.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.method === "initialize") {
@@ -295,7 +314,9 @@ rl.on("line", (line) => {
         ],
       });
     }
-    const payload = promptText.includes("brand-grade-comparison/v1")
+    const payload = promptText.includes("finish-only-plan/v1")
+      ? finishOnlyPlanFixture()
+      : promptText.includes("brand-grade-comparison/v1")
       ? comparisonFixture()
       : promptText.includes("brand-grade-audit/v1")
         ? auditFixture()
