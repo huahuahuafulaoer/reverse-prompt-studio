@@ -101,3 +101,14 @@ test("image replacement switches runs only after upload succeeds", async () => {
   assert.match(acceptProduct, /previousProductState/);
   assert.doesNotMatch(acceptProduct, /catch \(error\) \{\s*resetProductState\(\)/);
 });
+
+test("brand grade workbench exposes the required controls", async () => {
+  const html = await readFile(path.join(projectDirectory, "public/index.html"), "utf8");
+  assert.match(html, /data-mode="brand-grade"/);
+  assert.match(html, /id="finish-dropzone"/);
+  assert.match(html, /id="finish-analyze"/);
+  assert.match(html, /id="gate-rail"/);
+  assert.match(html, /id="copy-repair-contract"/);
+  assert.match(html, /id="candidate-input"/);
+  assert.match(html, /id="approve-candidate"/);
+});

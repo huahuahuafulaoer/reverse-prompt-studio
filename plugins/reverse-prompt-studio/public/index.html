@@ -46,6 +46,16 @@
         </div>
       </section>
 
+      <nav class="mode-switch" aria-label="工作模式">
+        <button type="button" class="mode-switch__item is-active" data-mode="reverse-prompt">
+          提示词反推
+        </button>
+        <button type="button" class="mode-switch__item" data-mode="brand-grade">
+          品牌级精修
+        </button>
+      </nav>
+
+      <div data-workspace="reverse-prompt">
       <main class="workspace">
         <aside class="source-pane">
           <div class="pane-heading">
@@ -162,6 +172,109 @@
           <button class="button button-primary" id="copyPromptButton" type="button">复制提示词</button>
         </div>
       </footer>
+      </div>
+
+      <main class="finish-workspace" data-workspace="brand-grade" hidden>
+        <header class="finish-heading">
+          <span class="eyebrow">DELIVERY IMAGE → QC LOOP</span>
+          <h1>从最早失守处，<br />把成图修到可交付。</h1>
+          <p>按真实性、艺术指导、品牌目标和生产完成度依次诊断。修复在 Flow 或其他编辑器中执行。</p>
+        </header>
+
+        <section class="finish-source">
+          <label id="finish-dropzone" class="finish-dropzone" for="finish-source-input">
+            <input
+              id="finish-source-input"
+              class="finish-file-input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+            />
+            <span class="finish-dropzone__mark" aria-hidden="true">↗</span>
+            <strong>放入待精修成图</strong>
+            <small>PNG · JPG · WEBP · 最大 20MB</small>
+            <img id="finish-source-preview" alt="待精修成图预览" hidden />
+          </label>
+        </section>
+
+        <section id="finish-brief" class="finish-brief" hidden>
+          <div class="finish-section-heading">
+            <div>
+              <span class="eyebrow">MINIMUM BRIEF</span>
+              <h2>补齐判断所需的最小信息</h2>
+            </div>
+            <span>不确定的内容会进入 HOLD</span>
+          </div>
+          <div class="brief-grid">
+            <label>渠道<input name="channel" placeholder="如 PDP / 社媒 / 海报" /></label>
+            <label>受众<input name="audience" placeholder="核心观看者" /></label>
+            <label>第一眼<input name="firstRead" placeholder="产品 / 人物 / 信息" /></label>
+            <label>品牌气质<input name="brandCharacter" placeholder="如 专业、克制、温暖" /></label>
+            <label>文案安全区<input name="copySafeArea" placeholder="如 右上 / 无" /></label>
+          </div>
+          <div id="evidence-list" class="evidence-list"></div>
+          <div class="finish-brief__actions">
+            <button id="add-evidence" type="button" class="button button--ghost">
+              添加真值 / 参考图
+            </button>
+            <button id="finish-analyze" type="button" class="button button--primary">
+              开始品牌级诊断
+            </button>
+          </div>
+        </section>
+
+        <section id="finish-progress" class="finish-progress" hidden aria-live="polite">
+          <span class="finish-progress__orb" aria-hidden="true"></span>
+          <strong id="finish-progress-title">正在检查真实性与物理关系</strong>
+          <small>Codex 正在按顺序检查四个质量门槛</small>
+        </section>
+
+        <section id="finish-results" class="finish-results" hidden>
+          <div class="finish-section-heading">
+            <div>
+              <span class="eyebrow">SEQUENTIAL GATES</span>
+              <h2>当前诊断</h2>
+            </div>
+            <span>只处理最早 FAIL，否则最早 HOLD</span>
+          </div>
+          <ol id="gate-rail" class="gate-rail"></ol>
+          <div id="finding-list" class="finding-list"></div>
+        </section>
+
+        <section id="candidate-panel" class="candidate-panel" hidden>
+          <div class="finish-section-heading">
+            <div>
+              <span class="eyebrow">CANDIDATE QC</span>
+              <h2>导回外部修复结果</h2>
+            </div>
+            <label class="button button--ghost candidate-upload">
+              导入修复结果
+              <input
+                id="candidate-input"
+                class="finish-file-input"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+              />
+            </label>
+          </div>
+          <div id="candidate-comparison" class="candidate-comparison"></div>
+          <div class="candidate-actions">
+            <p id="candidate-status">候选图会同时检查四层质量和锁定漂移。</p>
+            <button id="approve-candidate" type="button" class="button button--primary" disabled>
+              批准为交付源图
+            </button>
+          </div>
+        </section>
+      </main>
+
+      <aside id="repair-bar" class="repair-bar" hidden>
+        <div>
+          <strong id="repair-title"></strong>
+          <small id="repair-summary"></small>
+        </div>
+        <button id="copy-repair-contract" type="button" class="button button--primary">
+          复制 Flow 修复指令
+        </button>
+      </aside>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

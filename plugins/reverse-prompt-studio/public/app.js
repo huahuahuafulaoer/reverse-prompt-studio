@@ -15,6 +15,11 @@ import {
   shouldShowUpdate,
   updateCommandText,
 } from "/update-state.js";
+import {
+  buildGateRail,
+  canApproveCandidate,
+  repairActionState,
+} from "/finish-state.js";
 
 const ANALYSIS_STEPS = ["本地图片", "Codex 接收", "视觉拆解", "生成字段"];
 
@@ -31,6 +36,35 @@ const state = {
   analysisTimer: null,
   update: null,
 };
+
+const finish = {
+  runId: null,
+  sourceFile: null,
+  sourcePreviewUrl: null,
+  audit: null,
+  selectedFinding: null,
+  contract: null,
+  candidateId: null,
+  candidatePreviewUrl: null,
+  comparison: null,
+  progressTimer: null,
+};
+
+const finishProgressMessages = [
+  "正在检查真实性与物理关系",
+  "正在检查构图与光影意图",
+  "正在核对品牌与投放目标",
+  "正在清理材质、皮肤与边缘问题",
+];
+
+const finishEvidenceRoles = [
+  ["product_truth", "产品真值"],
+  ["subject_reference", "人物 / 主体真值"],
+  ["style_reference", "风格参考"],
+  ["composition_reference", "构图参考"],
+  ["material_reference", "材质参考"],
+  ["hard_structure_reference", "硬结构参考"],
+];
 
 const elements = {
   connectionStatus: document.querySelector("#connectionStatus"),
@@ -71,6 +105,32 @@ const elements = {
   toast: document.querySelector("#toast"),
 };
 
+const finishElements = {
+  modeButtons: [...document.querySelectorAll("[data-mode]")],
+  workspaces: [...document.querySelectorAll("[data-workspace]")],
+  sourceInput: document.querySelector("#finish-source-input"),
+  dropzone: document.querySelector("#finish-dropzone"),
+  sourcePreview: document.querySelector("#finish-source-preview"),
+  brief: document.querySelector("#finish-brief"),
+  evidenceList: document.querySelector("#evidence-list"),
+  addEvidence: document.querySelector("#add-evidence"),
+  analyze: document.querySelector("#finish-analyze"),
+  progress: document.querySelector("#finish-progress"),
+  progressTitle: document.querySelector("#finish-progress-title"),
+  results: document.querySelector("#finish-results"),
+  gateRail: document.querySelector("#gate-rail"),
+  findingList: document.querySelector("#finding-list"),
+  repairBar: document.querySelector("#repair-bar"),
+  repairTitle: document.querySelector("#repair-title"),
+  repairSummary: document.querySelector("#repair-summary"),
+  copyContract: document.querySelector("#copy-repair-contract"),
+  candidatePanel: document.querySelector("#candidate-panel"),
+  candidateInput: document.querySelector("#candidate-input"),
+  candidateComparison: document.querySelector("#candidate-comparison"),
+  candidateStatus: document.querySelector("#candidate-status"),
+  approveCandidate: document.querySelector("#approve-candidate"),
+};
+
 elements.imageInput.addEventListener("change", () => {
   const [file] = elements.imageInput.files;
   if (file) acceptImage(file);
@@ -109,7 +169,8 @@ window.addEventListener("paste", (event) => {
   const file = item?.getAsFile();
   if (file) {
     event.preventDefault();
-    acceptImage(file);
+    if (activeWorkspace() === "brand-grade") uploadFinishSource(file);
+    else acceptImage(file);
   }
 });
 
@@ -139,6 +200,7 @@ eventSource.onerror = () => setConnection(false);
 
 restoreLocalState();
 checkForUpdates();
+initializeFinishWorkbench();
 
 async function checkForUpdates() {
   try {
@@ -831,4 +893,456 @@ function restoreLocalState() {
   } catch {
     localStorage.removeItem("reverse-prompt-studio-state");
   }
+}
+
+function activeWorkspace() {
+  return finishElements.modeButtons.find((button) => button.classList.contains("is-active"))
+    ?.dataset.mode ?? "reverse-prompt";
+}
+
+function initializeFinishWorkbench() {
+  for (const button of finishElements.modeButtons) {
+    button.setAttribute("aria-pressed", String(button.classList.contains("is-active")));
+    button.addEventListener("click", () => switchWorkspace(button.dataset.mode));
+  }
+
+  finishElements.sourceInput.addEventListener("change", () => {
+    const [file] = finishElements.sourceInput.files;
+    if (file) uploadFinishSource(file);
+  });
+  for (const eventName of ["dragenter", "dragover"]) {
+    finishElements.dropzone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      finishElements.dropzone.classList.add("is-dragging");
+    });
+  }
+  for (const eventName of ["dragleave", "drop"]) {
+    finishElements.dropzone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      finishElements.dropzone.classList.remove("is-dragging");
+    });
+  }
+  finishElements.dropzone.addEventListener("drop", (event) => {
+    const [file] = [...event.dataTransfer.files].filter((candidate) =>
+      candidate.type.startsWith("image/"));
+    if (file) uploadFinishSource(file);
+  });
+  finishElements.addEvidence.addEventListener("click", addEvidenceRow);
+  finishElements.analyze.addEventListener("click", analyzeFinish);
+  finishElements.candidateInput.addEventListener("change", () => {
+    const [file] = finishElements.candidateInput.files;
+    if (file) uploadCandidate(file);
+  });
+  finishElements.approveCandidate.addEventListener("click", approveCandidate);
+  finishElements.copyContract.addEventListener("click", copyRepairContract);
+}
+
+function switchWorkspace(mode) {
+  for (const button of finishElements.modeButtons) {
+    const active = button.dataset.mode === mode;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
+  for (const workspace of finishElements.workspaces) {
+    workspace.hidden = workspace.dataset.workspace !== mode;
+  }
+  finishElements.repairBar.hidden = mode !== "brand-grade" || !finish.contract;
+}
+
+function validateFinishImage(file) {
+  if (!new Set(["image/png", "image/jpeg", "image/webp"]).has(file.type)) {
+    showToast("请选择 PNG、JPG 或 WEBP 图片");
+    return false;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    showToast("图片不能超过 20MB");
+    return false;
+  }
+  return true;
+}
+
+async function uploadFinishSource(file) {
+  if (!validateFinishImage(file)) return;
+  setFinishBusy(true, "正在保存待精修成图");
+  try {
+    const run = await requestBytes("/api/brand-grade/runs", file, file.type);
+    const previewUrl = URL.createObjectURL(file);
+    if (finish.sourcePreviewUrl) URL.revokeObjectURL(finish.sourcePreviewUrl);
+    finish.runId = run.id;
+    finish.sourceFile = file;
+    finish.sourcePreviewUrl = previewUrl;
+    resetFinishOutput();
+    finishElements.sourcePreview.src = previewUrl;
+    finishElements.sourcePreview.hidden = false;
+    finishElements.dropzone.classList.add("has-source");
+    finishElements.brief.hidden = false;
+    finishElements.analyze.disabled = false;
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    setFinishBusy(false);
+    finishElements.sourceInput.value = "";
+  }
+}
+
+function resetFinishOutput() {
+  stopFinishProgress();
+  finish.audit = null;
+  finish.selectedFinding = null;
+  finish.contract = null;
+  finish.candidateId = null;
+  finish.comparison = null;
+  if (finish.candidatePreviewUrl) URL.revokeObjectURL(finish.candidatePreviewUrl);
+  finish.candidatePreviewUrl = null;
+  finishElements.evidenceList.replaceChildren();
+  finishElements.results.hidden = true;
+  finishElements.repairBar.hidden = true;
+  finishElements.candidatePanel.hidden = true;
+  finishElements.candidatePanel.dataset.state = "";
+  finishElements.candidateComparison.replaceChildren();
+  finishElements.approveCandidate.disabled = true;
+  finishElements.approveCandidate.textContent = "批准为交付源图";
+  finishElements.candidateStatus.textContent = "候选图会同时检查四层质量和锁定漂移。";
+}
+
+function addEvidenceRow() {
+  const row = document.createElement("div");
+  row.className = "evidence-row";
+
+  const roleLabel = document.createElement("label");
+  roleLabel.textContent = "证据角色";
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", "证据角色");
+  for (const [value, label] of finishEvidenceRoles) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    select.append(option);
+  }
+  roleLabel.append(select);
+
+  const fileLabel = document.createElement("label");
+  fileLabel.className = "evidence-file";
+  const fileName = document.createElement("span");
+  fileName.textContent = "选择图片";
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/png,image/jpeg,image/webp";
+  input.setAttribute("aria-label", "证据图片");
+  input.addEventListener("change", () => {
+    delete row.dataset.inputId;
+    fileName.textContent = input.files[0]?.name ?? "选择图片";
+  });
+  fileLabel.append(fileName, input);
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "evidence-remove";
+  remove.setAttribute("aria-label", "移除这条证据");
+  remove.textContent = "×";
+  remove.addEventListener("click", () => row.remove());
+
+  row.append(roleLabel, fileLabel, remove);
+  finishElements.evidenceList.append(row);
+}
+
+function readFinishBrief() {
+  return Object.fromEntries(
+    [...finishElements.brief.querySelectorAll(".brief-grid input")]
+      .map((input) => [input.name, input.value.trim()]),
+  );
+}
+
+async function uploadEvidenceRows(runId) {
+  const rows = [...finishElements.evidenceList.querySelectorAll(".evidence-row")];
+  for (const row of rows) {
+    if (row.dataset.inputId) continue;
+    const file = row.querySelector('input[type="file"]').files[0];
+    if (!file) continue;
+    if (!validateFinishImage(file)) throw new Error("证据图片格式或大小不符合要求");
+    const role = row.querySelector("select").value;
+    const input = await requestBytes(
+      `/api/brand-grade/runs/${runId}/inputs?role=${encodeURIComponent(role)}`,
+      file,
+      file.type,
+    );
+    row.dataset.inputId = input.id;
+  }
+}
+
+async function analyzeFinish() {
+  if (!finish.runId || finish.progressTimer) return;
+  showFinishProgress();
+  setFinishBusy(true);
+  try {
+    await uploadEvidenceRows(finish.runId);
+    finish.audit = await requestJson(
+      `/api/brand-grade/runs/${finish.runId}/audit`,
+      "POST",
+      readFinishBrief(),
+    );
+    renderGateRail(buildGateRail(finish.audit.gates, finish.audit.earliestFailureGate));
+    renderFindings(finish.audit);
+    finishElements.results.hidden = false;
+  } catch (error) {
+    showToast(error.message);
+    finishElements.brief.hidden = false;
+  } finally {
+    stopFinishProgress();
+    setFinishBusy(false);
+  }
+}
+
+function showFinishProgress() {
+  stopFinishProgress();
+  finishElements.progress.hidden = false;
+  finishElements.results.hidden = true;
+  finishElements.repairBar.hidden = true;
+  finishElements.candidatePanel.hidden = true;
+  let index = 0;
+  finishElements.progressTitle.textContent = finishProgressMessages[index];
+  finish.progressTimer = window.setInterval(() => {
+    index = (index + 1) % finishProgressMessages.length;
+    finishElements.progressTitle.textContent = finishProgressMessages[index];
+  }, 1800);
+}
+
+function stopFinishProgress() {
+  if (finish.progressTimer) window.clearInterval(finish.progressTimer);
+  finish.progressTimer = null;
+  finishElements.progress.hidden = true;
+}
+
+function renderGateRail(rail) {
+  finishElements.gateRail.replaceChildren();
+  const icons = { PASS: "✓", HOLD: "!", FAIL: "×" };
+  for (const gate of rail) {
+    const item = document.createElement("li");
+    item.className = "gate-rail__item";
+    item.dataset.current = String(gate.isCurrent);
+    item.dataset.tone = gate.tone;
+    item.setAttribute("aria-current", gate.isCurrent ? "step" : "false");
+    const top = document.createElement("div");
+    top.className = "gate-rail__top";
+    top.append(
+      createTextElement("span", "gate-rail__id", gate.id),
+      createTextElement("span", "gate-rail__status", `${icons[gate.status]} ${gate.status}`),
+    );
+    item.append(
+      top,
+      createTextElement("strong", "gate-rail__name", gate.name),
+    );
+    if (gate.isCurrent) {
+      item.append(createTextElement("p", "gate-rail__summary", gate.summary));
+    }
+    finishElements.gateRail.append(item);
+  }
+}
+
+function renderFindings(audit) {
+  finishElements.findingList.replaceChildren();
+  const activeGate = audit.gates.find((gate) => gate.id === audit.earliestFailureGate);
+  if (!activeGate) {
+    const pass = createTextElement("div", "finish-all-pass", "✓ 四层均已通过，无需生成修复指令");
+    finishElements.findingList.append(pass);
+    return;
+  }
+
+  for (const finding of activeGate.findings) {
+    const action = repairActionState(finding);
+    const card = document.createElement("article");
+    card.className = "finding-card";
+    const heading = document.createElement("div");
+    heading.className = "finding-card__heading";
+    heading.append(
+      createTextElement("span", "finding-card__severity", finding.severity),
+      createTextElement("strong", "", finding.title),
+    );
+    const evidence = createTextElement("p", "finding-card__evidence", finding.observedEvidence);
+    const target = createTextElement("p", "finding-card__target", `目标：${finding.targetResult}`);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button button--primary";
+    button.textContent = action.label;
+    button.disabled = !action.enabled;
+    button.addEventListener("click", () => selectFinding(finding));
+    card.append(heading, evidence, target, button);
+    finishElements.findingList.append(card);
+  }
+}
+
+async function selectFinding(finding) {
+  const activeGate = finish.audit?.gates.find((gate) => gate.id === finish.audit.earliestFailureGate);
+  if (!activeGate?.findings.some((item) => item.id === finding.id)) {
+    return showToast("只能处理当前最早失败或待确认层");
+  }
+  const action = repairActionState(finding);
+  finish.selectedFinding = finding;
+  if (!action.enabled) return showToast(action.label);
+
+  setFinishBusy(true, "正在生成单问题修复指令");
+  try {
+    finish.contract = await requestJson(
+      `/api/brand-grade/runs/${finish.runId}/contracts`,
+      "POST",
+      { findingId: finding.id },
+    );
+    finishElements.repairTitle.textContent = finding.title;
+    finishElements.repairSummary.textContent = `只修改 ${finish.contract.changePaths.join("、")} · 其余路径锁定`;
+    finishElements.repairBar.hidden = false;
+    finishElements.candidatePanel.hidden = false;
+    finishElements.candidatePanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    setFinishBusy(false);
+  }
+}
+
+async function copyRepairContract() {
+  if (!finish.contract?.platformPrompt) return;
+  const originalLabel = finishElements.copyContract.textContent;
+  try {
+    await navigator.clipboard.writeText(finish.contract.platformPrompt);
+    finishElements.copyContract.textContent = "已复制";
+    window.setTimeout(() => {
+      finishElements.copyContract.textContent = originalLabel;
+    }, 1500);
+  } catch {
+    showToast("复制失败，请检查浏览器剪贴板权限");
+  }
+}
+
+async function uploadCandidate(file) {
+  if (!finish.contract || !validateFinishImage(file)) return;
+  setFinishBusy(true, "正在比较候选图");
+  finishElements.candidateStatus.textContent = "正在检查四层质量和锁定漂移…";
+  try {
+    const candidate = await requestBytes(
+      `/api/brand-grade/runs/${finish.runId}/candidates`,
+      file,
+      file.type,
+    );
+    finish.candidateId = candidate.id;
+    finish.comparison = await requestJson(
+      `/api/brand-grade/runs/${finish.runId}/candidates/${candidate.id}/compare`,
+      "POST",
+    );
+    const previewUrl = URL.createObjectURL(file);
+    if (finish.candidatePreviewUrl) URL.revokeObjectURL(finish.candidatePreviewUrl);
+    finish.candidatePreviewUrl = previewUrl;
+    renderComparison(finish.comparison, previewUrl);
+    finishElements.approveCandidate.disabled = !canApproveCandidate(finish.comparison);
+  } catch (error) {
+    finishElements.candidateStatus.textContent = "候选图比较未完成。";
+    showToast(error.message);
+  } finally {
+    setFinishBusy(false);
+    finishElements.candidateInput.value = "";
+  }
+}
+
+function renderComparison(comparison, candidatePreviewUrl) {
+  finishElements.candidateComparison.replaceChildren();
+  const images = document.createElement("div");
+  images.className = "comparison-images";
+  for (const [label, src] of [
+    ["原始源图", finish.sourcePreviewUrl],
+    ["修复候选", candidatePreviewUrl],
+  ]) {
+    const figure = document.createElement("figure");
+    const image = document.createElement("img");
+    image.src = src;
+    image.alt = label;
+    const caption = document.createElement("figcaption");
+    caption.textContent = label;
+    figure.append(image, caption);
+    images.append(figure);
+  }
+
+  const qc = document.createElement("div");
+  qc.className = "comparison-qc";
+  const rail = document.createElement("ol");
+  rail.className = "comparison-rail";
+  for (const gate of buildGateRail(comparison.gates, comparison.earliestFailureGate)) {
+    const item = document.createElement("li");
+    item.dataset.tone = gate.tone;
+    item.textContent = `${gate.status === "PASS" ? "✓" : gate.status === "HOLD" ? "!" : "×"} ${gate.id} · ${gate.status}`;
+    rail.append(item);
+  }
+  const locks = document.createElement("ul");
+  locks.className = "lock-drift-list";
+  if (comparison.lockDrift.length === 0) {
+    const item = document.createElement("li");
+    item.textContent = "✓ 未发现锁定路径漂移";
+    locks.append(item);
+  } else {
+    for (const drift of comparison.lockDrift) {
+      const item = document.createElement("li");
+      item.dataset.status = drift.status;
+      item.textContent = `${drift.status === "PASS" ? "✓" : "×"} ${drift.path} · ${drift.observed}`;
+      locks.append(item);
+    }
+  }
+  qc.append(rail, locks);
+  finishElements.candidateComparison.append(images, qc);
+
+  const approvable = canApproveCandidate(comparison);
+  finishElements.candidateStatus.textContent = approvable
+    ? "✓ 四层 PASS，且锁定路径无漂移，可以批准。"
+    : `${comparison.verdict} · 仍需处理最早未通过层或锁定漂移。`;
+}
+
+async function approveCandidate() {
+  if (!finish.candidateId || !canApproveCandidate(finish.comparison)) return;
+  setFinishBusy(true, "正在批准候选图");
+  try {
+    await requestJson(
+      `/api/brand-grade/runs/${finish.runId}/candidates/${finish.candidateId}/approve`,
+      "POST",
+    );
+    finishElements.candidatePanel.dataset.state = "approved";
+    finishElements.approveCandidate.textContent = "已批准 · 可进入高清放大";
+    finishElements.approveCandidate.disabled = true;
+    finishElements.candidateStatus.textContent = "✓ 已批准源图。高清放大是独立的后续步骤。";
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    setFinishBusy(false);
+  }
+}
+
+function setFinishBusy(busy, label) {
+  finishElements.sourceInput.disabled = busy;
+  finishElements.addEvidence.disabled = busy;
+  finishElements.analyze.disabled = busy || !finish.runId;
+  finishElements.candidateInput.disabled = busy;
+  finishElements.copyContract.disabled = busy;
+  if (label) finishElements.candidateStatus.textContent = label;
+  for (const control of finishElements.evidenceList.querySelectorAll("input, select, button")) {
+    control.disabled = busy;
+  }
+}
+
+async function requestBytes(url, bytes, contentType) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": contentType },
+    body: bytes,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || `请求失败：${response.status}`);
+  return body;
+}
+
+async function requestJson(url, method = "GET", body) {
+  const options = { method, headers: {} };
+  if (body !== undefined) {
+    options.headers["content-type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(url, options);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `请求失败：${response.status}`);
+  return payload;
 }
