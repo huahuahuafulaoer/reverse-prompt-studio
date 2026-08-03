@@ -5,6 +5,15 @@ import {
   editorRecipeSchema,
 } from "./codex-client.mjs";
 import {
+  createBrandGradeAuditTurnParams,
+  createBrandGradeComparisonTurnParams,
+} from "./brand-grade-prompts.mjs";
+import {
+  validateBrandGradeAudit,
+  validateBrandGradeComparison,
+} from "./brand-grade-schema.mjs";
+import { createRepairContract } from "./repair-contract.mjs";
+import {
   buildRevisionPrompt,
   compilePortablePrompt,
   normalizeRecipe,
@@ -17,14 +26,16 @@ export class StudioService extends EventEmitter {
   #store;
   #workspaceRoot;
   #skillPath;
+  #brandGradeSkillPath;
   #sessions = new Map();
 
-  constructor({ appServer, store, workspaceRoot, skillPath }) {
+  constructor({ appServer, store, workspaceRoot, skillPath, brandGradeSkillPath }) {
     super();
     this.#appServer = appServer;
     this.#store = store;
     this.#workspaceRoot = workspaceRoot;
     this.#skillPath = skillPath;
+    this.#brandGradeSkillPath = brandGradeSkillPath;
   }
 
   async analyze(runId) {
@@ -104,6 +115,69 @@ export class StudioService extends EventEmitter {
       recipe,
       compiledPrompt: compilePortablePrompt(recipe),
     };
+  }
+
+  async auditBrandGrade({ runId, brief }) {
+    const run = await this.#store.loadRun(runId);
+    if (run.workflow !== "brand_grade") {
+      throw new Error("Run is not a brand-grade workflow");
+    }
+    const thread = await this.#appServer.startThread({ cwd: this.#workspaceRoot });
+    this.#attachThread(runId, thread);
+    await this.#store.saveThreadId(runId, thread.id);
+    const roleInputs = await Promise.all(run.inputs.map(async (input) => ({
+      ...input,
+      path: await this.#store.getStoredPath(runId, input.filename),
+    })));
+    const raw = await thread.run(createBrandGradeAuditTurnParams({
+      threadId: thread.id,
+      sourcePath: await this.#store.getImagePath(runId),
+      roleInputs,
+      brief,
+      skillPath: this.#brandGradeSkillPath,
+    }));
+    raw.sourceVersionId = run.sourceVersionId;
+    const audit = validateBrandGradeAudit(raw);
+    await this.#store.saveBrandGradeAudit(runId, audit);
+    return audit;
+  }
+
+  async createBrandGradeRepairContract({ runId, findingId }) {
+    const audit = await this.#store.loadLatestAudit(runId);
+    const allPaths = Object.entries(audit.visualState).flatMap(([group, values]) =>
+      Object.keys(values).map((key) => `${group}.${key}`));
+    const contract = createRepairContract({ audit, findingId, allPaths });
+    await this.#store.saveRepairContract(runId, contract);
+    return contract;
+  }
+
+  async compareBrandGradeCandidate({ runId, candidateId }) {
+    const run = await this.#store.loadRun(runId);
+    if (run.workflow !== "brand_grade") {
+      throw new Error("Run is not a brand-grade workflow");
+    }
+    const candidate = run.candidates.find((item) => item.id === candidateId);
+    if (!candidate) throw new Error("Candidate not found");
+    const audit = await this.#store.loadLatestAudit(runId);
+    const contract = await this.#store.loadLatestContract(runId);
+    const thread = await this.#getOrResumeThread(runId);
+    const raw = await thread.run(createBrandGradeComparisonTurnParams({
+      threadId: thread.id,
+      sourcePath: await this.#store.getImagePath(runId),
+      candidatePath: await this.#store.getStoredPath(runId, candidate.filename),
+      audit,
+      contract,
+      skillPath: this.#brandGradeSkillPath,
+    }));
+    raw.sourceVersionId = run.sourceVersionId;
+    raw.candidateVersionId = candidateId;
+    const comparison = validateBrandGradeComparison(raw);
+    await this.#store.saveComparison(runId, candidateId, comparison);
+    return comparison;
+  }
+
+  async approveBrandGradeCandidate({ runId, candidateId }) {
+    return this.#store.approveCandidate(runId, candidateId);
   }
 
   close() {

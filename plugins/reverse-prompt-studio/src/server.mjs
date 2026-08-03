@@ -17,6 +17,9 @@ import { UpdateChecker } from "./update-checker.mjs";
 
 const sourceDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectDirectory = path.resolve(sourceDirectory, "..");
+const brandGradeSkillPath = fileURLToPath(
+  new URL("../skills/brand-grade-finishing/SKILL.md", import.meta.url),
+);
 const { dataRoot, workspaceRoot, skillPath, port } = resolveRuntimePaths({
   pluginRoot: projectDirectory,
   platform: process.platform,
@@ -29,13 +32,20 @@ await Promise.all([
   mkdir(workspaceRoot, { recursive: true }),
 ]);
 await access(skillPath);
+await access(brandGradeSkillPath);
 const packageMetadata = JSON.parse(
   await readFile(path.join(projectDirectory, "package.json"), "utf8"),
 );
 
 const appServer = await CodexAppServer.launch({ cwd: workspaceRoot });
 const store = new RunStore(path.join(dataRoot, "runs"));
-const service = new StudioService({ appServer, store, workspaceRoot, skillPath });
+const service = new StudioService({
+  appServer,
+  store,
+  workspaceRoot,
+  skillPath,
+  brandGradeSkillPath,
+});
 const updateChecker = new UpdateChecker({
   currentVersion: packageMetadata.version,
   cachePath: path.join(dataRoot, "update-check.json"),

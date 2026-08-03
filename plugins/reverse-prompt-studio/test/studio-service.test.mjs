@@ -11,6 +11,22 @@ import { StudioService } from "../src/studio-service.mjs";
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 
+async function createBrandGradeHarness(root) {
+  const store = new RunStore(root);
+  const appServer = await CodexAppServer.launch({
+    command: process.execPath,
+    args: [path.join(testDirectory, "../fixtures/fake-app-server.mjs")],
+  });
+  const service = new StudioService({
+    appServer,
+    store,
+    workspaceRoot: "/tmp/project",
+    skillPath: "/tmp/skill/SKILL.md",
+    brandGradeSkillPath: "/tmp/brand-grade/SKILL.md",
+  });
+  return { store, appServer, service };
+}
+
 test("StudioService analyzes and revises a run on the same Codex thread", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "reverse-prompt-service-"));
   const store = new RunStore(root);
@@ -167,6 +183,81 @@ test("StudioService analyzes with product truth and can match a new product on t
     assert.equal(
       persisted.recipe.sections.find((section) => section.id === "L").fields[0].value,
       "必须保留的左上光",
+    );
+  } finally {
+    service.close();
+    appServer.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("StudioService audits, contracts, compares, and approves a brand-grade candidate", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "brand-grade-service-"));
+  const { service, store, appServer } = await createBrandGradeHarness(root);
+
+  try {
+    const run = await store.createRun({
+      bytes: Buffer.from("source"),
+      contentType: "image/png",
+      workflow: "brand_grade",
+    });
+    const audit = await service.auditBrandGrade({
+      runId: run.id,
+      brief: {
+        channel: "PDP",
+        audience: "消费者",
+        firstRead: "产品",
+        brandCharacter: "克制",
+        copySafeArea: "右上",
+      },
+    });
+    assert.equal(audit.earliestFailureGate, "G1");
+
+    const contract = await service.createBrandGradeRepairContract({
+      runId: run.id,
+      findingId: "G1-F01",
+    });
+    assert.equal(contract.changePaths.length, 1);
+
+    const candidate = await store.addCandidate(run.id, {
+      bytes: Buffer.from("candidate"),
+      contentType: "image/png",
+    });
+    const comparison = await service.compareBrandGradeCandidate({
+      runId: run.id,
+      candidateId: candidate.id,
+    });
+    assert.equal(comparison.verdict, "PASS");
+
+    const approved = await service.approveBrandGradeCandidate({
+      runId: run.id,
+      candidateId: candidate.id,
+    });
+    assert.equal(approved.approvedCandidateId, candidate.id);
+  } finally {
+    service.close();
+    appServer.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("StudioService blocks a contract for a later failed gate", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "brand-grade-gate-service-"));
+  const { service, store, appServer } = await createBrandGradeHarness(root);
+
+  try {
+    const run = await store.createRun({
+      bytes: Buffer.from("source"),
+      contentType: "image/png",
+      workflow: "brand_grade",
+    });
+    await service.auditBrandGrade({ runId: run.id, brief: {} });
+    await assert.rejects(
+      () => service.createBrandGradeRepairContract({
+        runId: run.id,
+        findingId: "G4-F01",
+      }),
+      /earliest failed gate/,
     );
   } finally {
     service.close();
