@@ -100,3 +100,130 @@ test("HTTP app uploads an image, analyzes it, and revises the same run", async (
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("HTTP app supports the complete brand-grade lifecycle", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "brand-grade-http-"));
+  const store = new RunStore(root);
+  const appServer = await CodexAppServer.launch({
+    command: process.execPath,
+    args: [path.join(testDirectory, "../fixtures/fake-app-server.mjs")],
+  });
+  const service = new StudioService({
+    appServer,
+    store,
+    workspaceRoot: "/tmp/project",
+    skillPath: "/tmp/skill/SKILL.md",
+    brandGradeSkillPath: "/tmp/brand-grade/SKILL.md",
+  });
+  let server;
+
+  try {
+    server = createStudioHttpServer({
+      service,
+      store,
+      publicDirectory: path.join(testDirectory, "../public"),
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const origin = `http://127.0.0.1:${address.port}`;
+
+    const createdResponse = await fetch(`${origin}/api/brand-grade/runs`, {
+      method: "POST",
+      headers: { "content-type": "image/png" },
+      body: Buffer.from("source"),
+    });
+    assert.equal(createdResponse.status, 201);
+    const run = await createdResponse.json();
+    assert.equal(run.workflow, "brand_grade");
+
+    const inputResponse = await fetch(
+      `${origin}/api/brand-grade/runs/${run.id}/inputs?role=product_truth`,
+      {
+        method: "POST",
+        headers: { "content-type": "image/jpeg" },
+        body: Buffer.from("truth"),
+      },
+    );
+    assert.equal(inputResponse.status, 201);
+
+    const auditResponse = await fetch(`${origin}/api/brand-grade/runs/${run.id}/audit`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        channel: "PDP",
+        audience: "消费者",
+        firstRead: "产品",
+        brandCharacter: "克制",
+        copySafeArea: "右上",
+      }),
+    });
+    assert.equal(auditResponse.status, 200);
+    const audit = await auditResponse.json();
+    assert.equal(audit.schema, "brand-grade-audit/v1");
+
+    const laterContractResponse = await fetch(
+      `${origin}/api/brand-grade/runs/${run.id}/contracts`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ findingId: "G4-F01" }),
+      },
+    );
+    assert.equal(laterContractResponse.status, 400);
+
+    const contractResponse = await fetch(`${origin}/api/brand-grade/runs/${run.id}/contracts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ findingId: "G1-F01" }),
+    });
+    assert.equal(contractResponse.status, 201);
+    const contract = await contractResponse.json();
+    assert.equal(contract.schema, "brand-grade-repair-contract/v1");
+
+    const candidateResponse = await fetch(
+      `${origin}/api/brand-grade/runs/${run.id}/candidates`,
+      {
+        method: "POST",
+        headers: { "content-type": "image/png" },
+        body: Buffer.from("candidate"),
+      },
+    );
+    assert.equal(candidateResponse.status, 201);
+    const candidate = await candidateResponse.json();
+
+    const comparisonResponse = await fetch(
+      `${origin}/api/brand-grade/runs/${run.id}/candidates/${candidate.id}/compare`,
+      { method: "POST" },
+    );
+    assert.equal(comparisonResponse.status, 200);
+    assert.equal((await comparisonResponse.json()).verdict, "PASS");
+
+    const approvalResponse = await fetch(
+      `${origin}/api/brand-grade/runs/${run.id}/candidates/${candidate.id}/approve`,
+      { method: "POST" },
+    );
+    assert.equal(approvalResponse.status, 200);
+    assert.equal((await approvalResponse.json()).approvedCandidateId, candidate.id);
+
+    const invalidRoleResponse = await fetch(
+      `${origin}/api/brand-grade/runs/${run.id}/inputs?role=inspiration_only`,
+      {
+        method: "POST",
+        headers: { "content-type": "image/png" },
+        body: Buffer.from("bad-role"),
+      },
+    );
+    assert.equal(invalidRoleResponse.status, 400);
+
+    const missingCandidateResponse = await fetch(
+      `${origin}/api/brand-grade/runs/${run.id}/candidates/00000000-0000-0000-0000-000000000000/compare`,
+      { method: "POST" },
+    );
+    assert.equal(missingCandidateResponse.status, 404);
+  } finally {
+    if (server) await new Promise((resolve) => server.close(resolve));
+    service.close();
+    appServer.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
