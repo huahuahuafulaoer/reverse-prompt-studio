@@ -112,3 +112,15 @@ test("brand grade workbench exposes the required controls", async () => {
   assert.match(html, /id="candidate-input"/);
   assert.match(html, /id="approve-candidate"/);
 });
+
+test("creating a repair contract leaves the candidate panel in its QC-ready state", async () => {
+  const script = await readFile(path.join(projectDirectory, "public/app.js"), "utf8");
+  const selectFinding = script.slice(
+    script.indexOf("async function selectFinding(finding)"),
+    script.indexOf("async function copyRepairContract()"),
+  );
+  assert.match(
+    selectFinding,
+    /candidateStatus\.textContent = "候选图会同时检查四层质量和锁定漂移。"/,
+  );
+});

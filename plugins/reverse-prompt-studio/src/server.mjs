@@ -10,6 +10,7 @@ import { RunStore } from "./run-store.mjs";
 import {
   browserLaunchCommand,
   listenOnAvailablePort,
+  resolveAppServerCommand,
   resolveRuntimePaths,
 } from "./runtime-config.mjs";
 import { StudioService } from "./studio-service.mjs";
@@ -37,7 +38,11 @@ const packageMetadata = JSON.parse(
   await readFile(path.join(projectDirectory, "package.json"), "utf8"),
 );
 
-const appServer = await CodexAppServer.launch({ cwd: workspaceRoot });
+const appServerCommand = resolveAppServerCommand();
+const appServer = await CodexAppServer.launch({
+  cwd: appServerCommand.command ? projectDirectory : workspaceRoot,
+  ...appServerCommand,
+});
 const store = new RunStore(path.join(dataRoot, "runs"));
 const service = new StudioService({
   appServer,

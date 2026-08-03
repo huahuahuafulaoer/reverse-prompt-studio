@@ -1191,6 +1191,7 @@ async function selectFinding(finding) {
     finishElements.repairSummary.textContent = `只修改 ${finish.contract.changePaths.join("、")} · 其余路径锁定`;
     finishElements.repairBar.hidden = false;
     finishElements.candidatePanel.hidden = false;
+    finishElements.candidateStatus.textContent = "候选图会同时检查四层质量和锁定漂移。";
     finishElements.candidatePanel.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     showToast(error.message);
