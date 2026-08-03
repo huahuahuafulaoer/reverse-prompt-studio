@@ -6,6 +6,108 @@ function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 }
 
+function finding({ id, title, path }) {
+  return {
+    id,
+    severity: "major",
+    title,
+    observedEvidence: `${title}的可见证据`,
+    affectedPaths: [path],
+    targetResult: `修复${title}`,
+    recommendedRoute: "local_edit",
+    requiresTruth: false,
+    humanReview: false,
+    acceptanceChecks: [`${title}已修复`, "锁定内容不变"],
+  };
+}
+
+function auditFixture() {
+  return {
+    schema: "brand-grade-audit/v1",
+    sourceVersionId: "source-v1",
+    truthLedger: {
+      verified: [],
+      userProvided: [],
+      inferred: ["测试夹具中的可见状态"],
+      unknown: [],
+      humanReview: [],
+    },
+    visualState: {
+      M: { subject: "测试产品" },
+      S: { setting: "测试场景" },
+      A: { artDirection: "克制" },
+      P: { composition: "居中" },
+      C: { camera: "正面" },
+      K: { lighting: "柔光" },
+      L: { palette: "中性" },
+      G: { texture: "材质高光不连续" },
+      E: { effects: "无" },
+      R: { references: [] },
+      T: { typography: "无" },
+      Q: { edgeQuality: "轮廓有锯齿" },
+      X: { exclusions: ["不改变产品身份"] },
+    },
+    inputs: [{ id: "source-v1", role: "edit_target", filename: "source.png" }],
+    gates: [
+      {
+        id: "G1",
+        name: "Truth & Physics",
+        status: "FAIL",
+        summary: "材质光学关系需要修复",
+        findings: [finding({ id: "G1-F01", title: "材质高光", path: "G.texture" })],
+      },
+      {
+        id: "G2",
+        name: "Art Direction",
+        status: "PASS",
+        summary: "艺术方向可用",
+        findings: [],
+      },
+      {
+        id: "G3",
+        name: "Brand & Campaign",
+        status: "PASS",
+        summary: "品牌目标可用",
+        findings: [],
+      },
+      {
+        id: "G4",
+        name: "Production Finish",
+        status: "FAIL",
+        summary: "边缘需要清理",
+        findings: [finding({ id: "G4-F01", title: "边缘锯齿", path: "Q.edgeQuality" })],
+      },
+    ],
+    earliestFailureGate: "G1",
+    verdict: "FAIL",
+    allowedUse: "diagnosis_only",
+  };
+}
+
+function comparisonFixture() {
+  return {
+    schema: "brand-grade-comparison/v1",
+    sourceVersionId: "source-v1",
+    candidateVersionId: "candidate-v1",
+    gates: [
+      ["G1", "Truth & Physics"],
+      ["G2", "Art Direction"],
+      ["G3", "Brand & Campaign"],
+      ["G4", "Production Finish"],
+    ].map(([id, name]) => ({
+      id,
+      name,
+      status: "PASS",
+      summary: "通过",
+      findings: [],
+    })),
+    lockDrift: [],
+    earliestFailureGate: null,
+    verdict: "PASS",
+    allowedUse: "approved_source",
+  };
+}
+
 rl.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.method === "initialize") {
@@ -100,13 +202,18 @@ rl.on("line", (line) => {
         ],
       });
     }
+    const payload = promptText.includes("brand-grade-comparison/v1")
+      ? comparisonFixture()
+      : promptText.includes("brand-grade-audit/v1")
+        ? auditFixture()
+        : recipe;
     send({ id: message.id, result: { turn: { id: turnId, status: "inProgress" } } });
     send({
       method: "item/completed",
       params: {
         threadId: message.params.threadId,
         turnId,
-        item: { type: "agentMessage", id: "item_fake", text: JSON.stringify(recipe), phase: "final_answer" },
+        item: { type: "agentMessage", id: "item_fake", text: JSON.stringify(payload), phase: "final_answer" },
       },
     });
     send({
