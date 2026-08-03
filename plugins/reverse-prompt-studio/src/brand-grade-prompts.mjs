@@ -31,6 +31,8 @@ export function createBrandGradeAuditTurnParams({
         labels,
         `Campaign brief: ${JSON.stringify(brief)}`,
         "Return JSON only using schema brand-grade-audit/v1.",
+        "Return visualState as a flat array of {path, value} entries using paths like M.subject.",
+        "Do not return earliestFailureGate or verdict; the Studio derives them from gates.",
         "Do not create or edit an image.",
       ].join("\n"),
       text_elements: [],

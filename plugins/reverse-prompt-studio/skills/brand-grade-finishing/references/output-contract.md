@@ -6,14 +6,15 @@ Return one `brand-grade-audit/v1` object with:
 
 - `sourceVersionId`
 - `truthLedger`: `verified`, `userProvided`, `inferred`, `unknown`, `humanReview`
-- `visualState`: objects `M`, `S`, `A`, `P`, `C`, `K`, `L`, `G`, `E`, `R`, `T`, `Q`, `X`
+- `visualState`: a flat array of `{path, value}` entries; each `value` is one non-empty string
+- each path uses exactly `GROUP.field` (for example `M.subject`) where `GROUP` is one of `M`, `S`, `A`, `P`, `C`, `K`, `L`, `G`, `E`, `R`, `T`, `Q`, `X`; do not return empty, malformed, or duplicate paths
 - `inputs`: `id`, `role`, `filename`
 - exactly four ordered `gates`: G1, G2, G3, G4
 - each gate: `id`, `name`, `status`, `summary`, `findings`
 - each finding: `id`, `severity`, `title`, `observedEvidence`, `affectedPaths`, `targetResult`, `recommendedRoute`, `requiresTruth`, `humanReview`, `acceptanceChecks`
-- `earliestFailureGate`: earliest FAIL, otherwise earliest HOLD, otherwise null
-- `verdict`: status of `earliestFailureGate`, otherwise PASS
 - `allowedUse`: `diagnosis_only` unless every gate passes
+
+Do not return `earliestFailureGate` or `verdict` in the audit transport. The Studio derives `earliestFailureGate` and `verdict` from `gates`: the first FAIL wins, otherwise the first HOLD, otherwise PASS.
 
 ## Comparison
 

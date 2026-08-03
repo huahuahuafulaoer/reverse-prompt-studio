@@ -1,10 +1,44 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import * as brandGradeSchema from "../src/brand-grade-schema.mjs";
 import {
+  brandGradeAuditOutputSchema,
   validateBrandGradeAudit,
   validateBrandGradeComparison,
 } from "../src/brand-grade-schema.mjs";
+
+function assertStrictObjectSchemas(schema, path = "$") {
+  if (!schema || typeof schema !== "object") return;
+  if (schema.type === "object") {
+    assert.ok(
+      schema.properties && typeof schema.properties === "object",
+      `${path} must declare fixed properties`,
+    );
+    assert.equal(
+      schema.additionalProperties,
+      false,
+      `${path} must set additionalProperties=false`,
+    );
+    assert.ok(Array.isArray(schema.required), `${path} must declare required`);
+    assert.deepEqual(
+      [...schema.required].sort(),
+      Object.keys(schema.properties).sort(),
+      `${path}.required must contain every property key and no extras`,
+    );
+  }
+  for (const [key, child] of Object.entries(schema)) {
+    if (key === "properties") {
+      for (const [property, propertySchema] of Object.entries(child)) {
+        assertStrictObjectSchemas(propertySchema, `${path}.properties.${property}`);
+      }
+    } else if (key === "items") {
+      assertStrictObjectSchemas(child, `${path}.items`);
+    } else if (key === "anyOf" || key === "oneOf" || key === "allOf") {
+      child.forEach((entry, index) => assertStrictObjectSchemas(entry, `${path}.${key}[${index}]`));
+    }
+  }
+}
 
 const audit = {
   schema: "brand-grade-audit/v1",
@@ -96,6 +130,124 @@ const audit = {
 
 test("accepts a complete audit", () => {
   assert.equal(validateBrandGradeAudit(audit).earliestFailureGate, "G1");
+});
+
+test("audit response schema uses the strict fixed-property profile for every object", () => {
+  assertStrictObjectSchemas(brandGradeAuditOutputSchema);
+});
+
+test("audit response schema constrains visual-state paths to internal groups", () => {
+  const pathPattern = new RegExp(
+    brandGradeAuditOutputSchema.properties.visualState.items.properties.path.pattern,
+  );
+  assert.match("M.subject", pathPattern);
+  assert.match("Q.edgeQuality", pathPattern);
+  assert.doesNotMatch("D.dimensions", pathPattern);
+  assert.doesNotMatch("M.subject.detail", pathPattern);
+});
+
+test("audit transport omits derived routing fields and normalization computes them", () => {
+  assert.equal(brandGradeAuditOutputSchema.properties.earliestFailureGate, undefined);
+  assert.equal(brandGradeAuditOutputSchema.properties.verdict, undefined);
+  assert.ok(!brandGradeAuditOutputSchema.required.includes("earliestFailureGate"));
+  assert.ok(!brandGradeAuditOutputSchema.required.includes("verdict"));
+  const transport = structuredClone(audit);
+  delete transport.earliestFailureGate;
+  delete transport.verdict;
+  transport.visualState = [{ path: "M.subject", value: "护肤品瓶装产品" }];
+  transport.gates[0].status = "HOLD";
+  transport.gates[2].status = "FAIL";
+
+  const normalized = brandGradeSchema.normalizeBrandGradeAuditTransport(transport);
+
+  assert.equal(normalized.earliestFailureGate, "G3");
+  assert.equal(normalized.verdict, "FAIL");
+  assert.equal(validateBrandGradeAudit(normalized), normalized);
+});
+
+test("normalizes flat visual-state transport entries into every internal group", () => {
+  assert.equal(
+    typeof brandGradeSchema.normalizeBrandGradeAuditTransport,
+    "function",
+    "normalizeBrandGradeAuditTransport must be exported",
+  );
+  const transport = {
+    ...structuredClone(audit),
+    visualState: [
+      { path: "M.subject", value: "护肤品瓶装产品" },
+      { path: "K.lighting", value: "左上柔光" },
+      { path: "X.exclusions", value: "不要改变瓶型" },
+    ],
+  };
+
+  const normalized = brandGradeSchema.normalizeBrandGradeAuditTransport(transport);
+
+  assert.deepEqual(normalized.visualState.M, { subject: "护肤品瓶装产品" });
+  assert.deepEqual(normalized.visualState.K, { lighting: "左上柔光" });
+  assert.deepEqual(normalized.visualState.X, { exclusions: "不要改变瓶型" });
+  assert.deepEqual(Object.keys(normalized.visualState), [
+    "M", "S", "A", "P", "C", "K", "L", "G", "E", "R", "T", "Q", "X",
+  ]);
+  assert.notEqual(normalized, transport);
+});
+
+test("rejects an illegal visual-state group or path", () => {
+  assert.throws(
+    () => brandGradeSchema.normalizeBrandGradeAuditTransport({
+      ...audit,
+      visualState: [{ path: "Z.subject", value: "产品" }],
+    }),
+    /visualState\[0\]\.path has an invalid group/,
+  );
+  for (const path of ["M", "M.", "M.subject.detail", "M. subject"]) {
+    assert.throws(
+      () => brandGradeSchema.normalizeBrandGradeAuditTransport({
+        ...audit,
+        visualState: [{ path, value: "产品" }],
+      }),
+      /visualState\[0\]\.path is invalid/,
+    );
+  }
+});
+
+test("rejects duplicate visual-state paths", () => {
+  assert.throws(
+    () => brandGradeSchema.normalizeBrandGradeAuditTransport({
+      ...audit,
+      visualState: [
+        { path: "M.subject", value: "产品" },
+        { path: "M.subject", value: "另一个产品" },
+      ],
+    }),
+    /duplicate visualState path M\.subject/,
+  );
+});
+
+test("rejects empty visual-state paths and values", () => {
+  assert.throws(
+    () => brandGradeSchema.normalizeBrandGradeAuditTransport({
+      ...audit,
+      visualState: [{ path: "", value: "产品" }],
+    }),
+    /visualState\[0\]\.path must be a non-empty string/,
+  );
+  assert.throws(
+    () => brandGradeSchema.normalizeBrandGradeAuditTransport({
+      ...audit,
+      visualState: [{ path: "M.subject", value: "   " }],
+    }),
+    /visualState\[0\]\.value must be a non-empty string/,
+  );
+});
+
+test("rejects a non-array visual-state transport", () => {
+  assert.throws(
+    () => brandGradeSchema.normalizeBrandGradeAuditTransport({
+      ...audit,
+      visualState: audit.visualState,
+    }),
+    /visualState transport must be an array/,
+  );
 });
 
 test("rejects an unknown gate status", () => {

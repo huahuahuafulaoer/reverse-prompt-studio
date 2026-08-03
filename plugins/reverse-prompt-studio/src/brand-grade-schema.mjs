@@ -1,5 +1,9 @@
 export const GATE_IDS = Object.freeze(["G1", "G2", "G3", "G4"]);
 export const GATE_STATUS = Object.freeze(["PASS", "HOLD", "FAIL"]);
+const VISUAL_STATE_GROUPS = Object.freeze([
+  "M", "S", "A", "P", "C", "K", "L", "G", "E", "R", "T", "Q", "X",
+]);
+const VISUAL_STATE_PATH_PATTERN = `^(?:${VISUAL_STATE_GROUPS.join("|")})\\.[^\\s.]+$`;
 export const INPUT_ROLES = Object.freeze([
   "edit_target",
   "product_truth",
@@ -133,7 +137,7 @@ export function validateBrandGradeAudit(report) {
     strings(report.truthLedger[key], `truthLedger.${key}`);
   }
   object(report.visualState, "visualState");
-  for (const key of ["M", "S", "A", "P", "C", "K", "L", "G", "E", "R", "T", "Q", "X"]) {
+  for (const key of VISUAL_STATE_GROUPS) {
     object(report.visualState[key], `visualState.${key}`);
   }
   if (!Array.isArray(report.inputs) || report.inputs.length === 0) {
@@ -147,6 +151,33 @@ export function validateBrandGradeAudit(report) {
     string(input.filename, `inputs[${index}].filename`);
   });
   return report;
+}
+
+export function normalizeBrandGradeAuditTransport(report) {
+  if (!Array.isArray(report.visualState)) {
+    throw new Error("visualState transport must be an array");
+  }
+  const visualState = Object.fromEntries(VISUAL_STATE_GROUPS.map((group) => [group, {}]));
+  const seenPaths = new Set();
+  report.visualState.forEach((entry, index) => {
+    object(entry, `visualState[${index}]`);
+    const entryPath = string(entry.path, `visualState[${index}].path`);
+    const match = /^([^.]+)\.([^\s.]+)$/.exec(entryPath);
+    if (!match) throw new Error(`visualState[${index}].path is invalid`);
+    const [, group, field] = match;
+    if (!VISUAL_STATE_GROUPS.includes(group)) {
+      throw new Error(`visualState[${index}].path has an invalid group`);
+    }
+    const value = string(entry.value, `visualState[${index}].value`);
+    if (seenPaths.has(entryPath)) throw new Error(`duplicate visualState path ${entryPath}`);
+    seenPaths.add(entryPath);
+    visualState[group][field] = value;
+  });
+  const earliestFailureGate = computeEarliestFailureGate(report.gates);
+  const verdict = earliestFailureGate
+    ? report.gates.find((gate) => gate.id === earliestFailureGate)?.status
+    : "PASS";
+  return { ...report, visualState, earliestFailureGate, verdict };
 }
 
 export function validateBrandGradeComparison(report) {
@@ -167,10 +198,6 @@ export function validateBrandGradeComparison(report) {
   return report;
 }
 
-const textOrStringsSchema = {
-  anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
-};
-const visualGroupSchema = { type: "object", additionalProperties: textOrStringsSchema };
 const findingOutputSchema = {
   type: "object",
   additionalProperties: false,
@@ -234,13 +261,13 @@ export const brandGradeAuditOutputSchema = {
     "visualState",
     "inputs",
     "gates",
-    "earliestFailureGate",
-    "verdict",
     "allowedUse",
   ],
   properties: {
     schema: { type: "string", const: "brand-grade-audit/v1" },
-    ...sharedReportProperties,
+    sourceVersionId: sharedReportProperties.sourceVersionId,
+    gates: sharedReportProperties.gates,
+    allowedUse: sharedReportProperties.allowedUse,
     truthLedger: {
       type: "object",
       additionalProperties: false,
@@ -251,13 +278,16 @@ export const brandGradeAuditOutputSchema = {
       ),
     },
     visualState: {
-      type: "object",
-      additionalProperties: false,
-      required: ["M", "S", "A", "P", "C", "K", "L", "G", "E", "R", "T", "Q", "X"],
-      properties: Object.fromEntries(
-        ["M", "S", "A", "P", "C", "K", "L", "G", "E", "R", "T", "Q", "X"]
-          .map((key) => [key, visualGroupSchema]),
-      ),
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["path", "value"],
+        properties: {
+          path: { type: "string", pattern: VISUAL_STATE_PATH_PATTERN },
+          value: { type: "string" },
+        },
+      },
     },
     inputs: {
       type: "array",

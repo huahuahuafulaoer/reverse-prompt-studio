@@ -9,6 +9,7 @@ import {
   createBrandGradeComparisonTurnParams,
 } from "./brand-grade-prompts.mjs";
 import {
+  normalizeBrandGradeAuditTransport,
   validateBrandGradeAudit,
   validateBrandGradeComparison,
 } from "./brand-grade-schema.mjs";
@@ -137,7 +138,7 @@ export class StudioService extends EventEmitter {
       skillPath: this.#brandGradeSkillPath,
     }));
     raw.sourceVersionId = run.sourceVersionId;
-    const audit = validateBrandGradeAudit(raw);
+    const audit = validateBrandGradeAudit(normalizeBrandGradeAuditTransport(raw));
     await this.#store.saveBrandGradeAudit(runId, audit);
     return audit;
   }

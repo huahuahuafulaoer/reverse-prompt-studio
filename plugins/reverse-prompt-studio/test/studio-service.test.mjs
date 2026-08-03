@@ -212,6 +212,12 @@ test("StudioService audits, contracts, compares, and approves a brand-grade cand
       },
     });
     assert.equal(audit.earliestFailureGate, "G1");
+    assert.equal(audit.visualState.G.texture, "材质高光不连续");
+    assert.deepEqual(Object.keys(audit.visualState), [
+      "M", "S", "A", "P", "C", "K", "L", "G", "E", "R", "T", "Q", "X",
+    ]);
+    const persistedAudit = await store.loadLatestAudit(run.id);
+    assert.deepEqual(persistedAudit.visualState, audit.visualState);
 
     const contract = await service.createBrandGradeRepairContract({
       runId: run.id,
