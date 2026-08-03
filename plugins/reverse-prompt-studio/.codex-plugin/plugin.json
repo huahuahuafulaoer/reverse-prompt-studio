@@ -1,6 +1,6 @@
 {
   "name": "reverse-prompt-studio",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local interactive workspace for reverse-engineering and editing image prompts with the user's own Codex session.",
   "author": {
     "name": "huahuahuafulaoer",
