@@ -53,6 +53,10 @@ test("StudioService analyzes and revises a run on the same Codex thread", async 
     assert.equal(analyzed.recipe.title, "Fake result");
     assert.equal(analyzed.threadId, "thr_fake");
     assert.ok(analyzed.recipe.sections.some((section) => section.id === "L"));
+    assert.deepEqual(await store.getThreadState(run.id), {
+      threadId: "thr_fake",
+      archived: true,
+    });
 
     const compositionField = analyzed.recipe.sections
       .find((section) => section.id === "C").fields[0];
@@ -61,6 +65,7 @@ test("StudioService analyzes and revises a run on the same Codex thread", async 
     const revised = await service.revise(run.id, analyzed.recipe);
     assert.equal(revised.recipe.title, "Fake revised result");
     assert.match(revised.compiledPrompt, /68%/);
+    assert.equal((await store.getThreadState(run.id)).archived, true);
 
     const instructed = await service.revise(run.id, revised.recipe, [
       { sectionId: "C", instruction: "主体占比改成 72%" },

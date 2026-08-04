@@ -250,6 +250,8 @@ test("CodexAppServer initializes a process and starts a resumable thread", async
 
     const resumed = await appServer.resumeThread("thr_previous");
     assert.equal(resumed.id, "thr_previous");
+    await appServer.archiveThread("thr_previous");
+    await appServer.unarchiveThread("thr_previous");
     resumed.close();
     thread.close();
   } finally {

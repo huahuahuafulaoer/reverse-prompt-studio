@@ -52,6 +52,14 @@ export class CodexAppServer extends EventEmitter {
     return new CodexThread({ connection: this.#connection, threadId: result.thread.id });
   }
 
+  async archiveThread(threadId) {
+    await this.#connection.request("thread/archive", { threadId });
+  }
+
+  async unarchiveThread(threadId) {
+    await this.#connection.request("thread/unarchive", { threadId });
+  }
+
   close() {
     this.#connection.close();
     if (!this.#process.killed) this.#process.kill("SIGTERM");

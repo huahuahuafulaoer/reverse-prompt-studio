@@ -84,13 +84,34 @@ export class RunStore {
     const runDirectory = this.#runDirectory(id);
     const runPath = path.join(runDirectory, "run.json");
     const run = JSON.parse(await readFile(runPath, "utf8"));
-    await writeFile(runPath, JSON.stringify({ ...run, threadId }, null, 2));
+    await writeFile(
+      runPath,
+      JSON.stringify({ ...run, threadId, threadArchived: false }, null, 2),
+    );
   }
 
   async getThreadId(id) {
     const runDirectory = this.#runDirectory(id);
     const run = JSON.parse(await readFile(path.join(runDirectory, "run.json"), "utf8"));
     return run.threadId ?? null;
+  }
+
+  async getThreadState(id) {
+    const runDirectory = this.#runDirectory(id);
+    const run = JSON.parse(await readFile(path.join(runDirectory, "run.json"), "utf8"));
+    return {
+      threadId: run.threadId ?? null,
+      archived: run.threadArchived === true,
+    };
+  }
+
+  async setThreadArchived(id, archived) {
+    if (typeof archived !== "boolean") throw new Error("Thread archived state must be boolean");
+    const runDirectory = this.#runDirectory(id);
+    const runPath = path.join(runDirectory, "run.json");
+    const run = JSON.parse(await readFile(runPath, "utf8"));
+    if (!run.threadId) throw new Error("This run has no Codex thread");
+    await writeFile(runPath, JSON.stringify({ ...run, threadArchived: archived }, null, 2));
   }
 
   async loadRun(id) {

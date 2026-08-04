@@ -1,6 +1,7 @@
 import readline from "node:readline";
 
 const rl = readline.createInterface({ input: process.stdin });
+const archivedThreads = new Set();
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -142,8 +143,29 @@ rl.on("line", (line) => {
     return;
   }
   if (message.method === "initialized") return;
-  if (message.method === "thread/start" || message.method === "thread/resume") {
+  if (message.method === "thread/start") {
     send({ id: message.id, result: { thread: { id: message.params.threadId ?? "thr_fake" } } });
+    return;
+  }
+  if (message.method === "thread/resume") {
+    if (archivedThreads.has(message.params.threadId)) {
+      send({
+        id: message.id,
+        error: { code: -32000, message: "thread must be unarchived before resume" },
+      });
+      return;
+    }
+    send({ id: message.id, result: { thread: { id: message.params.threadId } } });
+    return;
+  }
+  if (message.method === "thread/archive") {
+    archivedThreads.add(message.params.threadId);
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "thread/unarchive") {
+    archivedThreads.delete(message.params.threadId);
+    send({ id: message.id, result: { thread: { id: message.params.threadId } } });
     return;
   }
   if (message.method === "turn/start") {

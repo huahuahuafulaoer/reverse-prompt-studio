@@ -37,6 +37,31 @@ test("RunStore saves source images and recipe revisions inside a run directory",
   }
 });
 
+test("RunStore persists whether a Codex thread is archived", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "reverse-prompt-thread-state-"));
+  const store = new RunStore(root);
+
+  try {
+    const run = await store.createRun({
+      bytes: Buffer.from("image"),
+      contentType: "image/png",
+    });
+    await store.saveThreadId(run.id, "thr_state");
+    assert.deepEqual(await store.getThreadState(run.id), {
+      threadId: "thr_state",
+      archived: false,
+    });
+
+    await store.setThreadArchived(run.id, true);
+    assert.deepEqual(await store.getThreadState(run.id), {
+      threadId: "thr_state",
+      archived: true,
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("RunStore saves a role-specific product image beside the reference image", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "reverse-prompt-product-store-"));
   const store = new RunStore(root);

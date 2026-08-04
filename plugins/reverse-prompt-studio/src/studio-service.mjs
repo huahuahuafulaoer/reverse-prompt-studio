@@ -55,26 +55,28 @@ export class StudioService extends EventEmitter {
     const thread = await this.#appServer.startThread({ cwd: this.#workspaceRoot });
     this.#attachThread(runId, thread);
     await this.#store.saveThreadId(runId, thread.id);
-    const recipe = normalizeRecipe(
-      await thread.run(
-        createAnalyzeTurnParams({
-          threadId: thread.id,
-          imagePath,
-          productImagePath,
-          skillPath: this.#skillPath,
-          transferMode,
-          replacementSubject,
-        }),
-      ),
-    );
-    validateTransferRecipe(recipe, { expectedMode: transferMode, replacementSubject });
-    if (productImagePath) validateProductRecipe(recipe);
-    await this.#store.saveRecipe(runId, recipe, "analysis");
-    return {
-      threadId: thread.id,
-      recipe,
-      compiledPrompt: compilePortablePrompt(recipe),
-    };
+    return this.#runAndArchive(runId, thread, async () => {
+      const recipe = normalizeRecipe(
+        await thread.run(
+          createAnalyzeTurnParams({
+            threadId: thread.id,
+            imagePath,
+            productImagePath,
+            skillPath: this.#skillPath,
+            transferMode,
+            replacementSubject,
+          }),
+        ),
+      );
+      validateTransferRecipe(recipe, { expectedMode: transferMode, replacementSubject });
+      if (productImagePath) validateProductRecipe(recipe);
+      await this.#store.saveRecipe(runId, recipe, "analysis");
+      return {
+        threadId: thread.id,
+        recipe,
+        compiledPrompt: compilePortablePrompt(recipe),
+      };
+    });
   }
 
   async revise(runId, currentRecipe, sectionInstructions = []) {
@@ -88,38 +90,40 @@ export class StudioService extends EventEmitter {
       normalizedInstructions,
     );
     const thread = await this.#getOrResumeThread(runId);
-    const generatedRecipe = normalizeRecipe(
-      await thread.run({
-        input: [
-          {
-            type: "text",
-            text: buildRevisionPrompt(normalizedCurrentRecipe, normalizedInstructions),
-            text_elements: [],
-          },
-          {
-            type: "skill",
-            name: "reverse-engineering-image-prompts",
-            path: this.#skillPath,
-          },
-        ],
-        outputSchema: editorRecipeSchema,
-      }),
-    );
-    const recipe = restoreRevisionRecipeSections(generatedRecipe, normalizedCurrentRecipe, {
-      authorizedSectionIds,
+    return this.#runAndArchive(runId, thread, async () => {
+      const generatedRecipe = normalizeRecipe(
+        await thread.run({
+          input: [
+            {
+              type: "text",
+              text: buildRevisionPrompt(normalizedCurrentRecipe, normalizedInstructions),
+              text_elements: [],
+            },
+            {
+              type: "skill",
+              name: "reverse-engineering-image-prompts",
+              path: this.#skillPath,
+            },
+          ],
+          outputSchema: editorRecipeSchema,
+        }),
+      );
+      const recipe = restoreRevisionRecipeSections(generatedRecipe, normalizedCurrentRecipe, {
+        authorizedSectionIds,
+      });
+      validateTransferRecipe(recipe, {
+        expectedMode: normalizedCurrentRecipe.transferMode,
+        replacementSubject: normalizedCurrentRecipe.transferMode === "subject_swap"
+          ? normalizedCurrentRecipe.contentAnchors?.subject?.value
+          : "",
+      });
+      await this.#store.saveRecipe(runId, recipe, "revision");
+      return {
+        threadId: thread.id,
+        recipe,
+        compiledPrompt: compilePortablePrompt(recipe),
+      };
     });
-    validateTransferRecipe(recipe, {
-      expectedMode: normalizedCurrentRecipe.transferMode,
-      replacementSubject: normalizedCurrentRecipe.transferMode === "subject_swap"
-        ? normalizedCurrentRecipe.contentAnchors?.subject?.value
-        : "",
-    });
-    await this.#store.saveRecipe(runId, recipe, "revision");
-    return {
-      threadId: thread.id,
-      recipe,
-      compiledPrompt: compilePortablePrompt(recipe),
-    };
   }
 
   async matchProduct(runId, currentRecipe) {
@@ -127,32 +131,34 @@ export class StudioService extends EventEmitter {
     const productImagePath = await this.#store.getProductImagePath(runId);
     if (!productImagePath) throw new Error("请先添加产品图");
     const thread = await this.#getOrResumeThread(runId);
-    const generatedRecipe = normalizeRecipe(
-      await thread.run(
-        createProductMatchTurnParams({
-          threadId: thread.id,
-          productImagePath,
-          skillPath: this.#skillPath,
-          currentRecipe: normalizedCurrentRecipe,
-        }),
-      ),
-    );
-    const recipe = restoreLockedRecipeSections(generatedRecipe, normalizedCurrentRecipe, {
-      authorizedSectionIds: ["P"],
+    return this.#runAndArchive(runId, thread, async () => {
+      const generatedRecipe = normalizeRecipe(
+        await thread.run(
+          createProductMatchTurnParams({
+            threadId: thread.id,
+            productImagePath,
+            skillPath: this.#skillPath,
+            currentRecipe: normalizedCurrentRecipe,
+          }),
+        ),
+      );
+      const recipe = restoreLockedRecipeSections(generatedRecipe, normalizedCurrentRecipe, {
+        authorizedSectionIds: ["P"],
+      });
+      validateTransferRecipe(recipe, {
+        expectedMode: normalizedCurrentRecipe.transferMode,
+        replacementSubject: normalizedCurrentRecipe.transferMode === "subject_swap"
+          ? normalizedCurrentRecipe.contentAnchors?.subject?.value
+          : "",
+      });
+      validateProductRecipe(recipe, { previousRecipe: normalizedCurrentRecipe });
+      await this.#store.saveRecipe(runId, recipe, "product-match");
+      return {
+        threadId: thread.id,
+        recipe,
+        compiledPrompt: compilePortablePrompt(recipe),
+      };
     });
-    validateTransferRecipe(recipe, {
-      expectedMode: normalizedCurrentRecipe.transferMode,
-      replacementSubject: normalizedCurrentRecipe.transferMode === "subject_swap"
-        ? normalizedCurrentRecipe.contentAnchors?.subject?.value
-        : "",
-    });
-    validateProductRecipe(recipe, { previousRecipe: normalizedCurrentRecipe });
-    await this.#store.saveRecipe(runId, recipe, "product-match");
-    return {
-      threadId: thread.id,
-      recipe,
-      compiledPrompt: compilePortablePrompt(recipe),
-    };
   }
 
   async auditBrandGrade({ runId, brief }) {
@@ -163,21 +169,23 @@ export class StudioService extends EventEmitter {
     const thread = await this.#appServer.startThread({ cwd: this.#workspaceRoot });
     this.#attachThread(runId, thread);
     await this.#store.saveThreadId(runId, thread.id);
-    const roleInputs = await Promise.all(run.inputs.map(async (input) => ({
-      ...input,
-      path: await this.#store.getStoredPath(runId, input.filename),
-    })));
-    const raw = await thread.run(createBrandGradeAuditTurnParams({
-      threadId: thread.id,
-      sourcePath: await this.#store.getImagePath(runId),
-      roleInputs,
-      brief,
-      skillPath: this.#brandGradeSkillPath,
-    }));
-    raw.sourceVersionId = run.sourceVersionId;
-    const audit = validateBrandGradeAudit(normalizeBrandGradeAuditTransport(raw));
-    await this.#store.saveBrandGradeAudit(runId, audit);
-    return audit;
+    return this.#runAndArchive(runId, thread, async () => {
+      const roleInputs = await Promise.all(run.inputs.map(async (input) => ({
+        ...input,
+        path: await this.#store.getStoredPath(runId, input.filename),
+      })));
+      const raw = await thread.run(createBrandGradeAuditTurnParams({
+        threadId: thread.id,
+        sourcePath: await this.#store.getImagePath(runId),
+        roleInputs,
+        brief,
+        skillPath: this.#brandGradeSkillPath,
+      }));
+      raw.sourceVersionId = run.sourceVersionId;
+      const audit = validateBrandGradeAudit(normalizeBrandGradeAuditTransport(raw));
+      await this.#store.saveBrandGradeAudit(runId, audit);
+      return audit;
+    });
   }
 
   async createFinishOnlyPlan({ runId, direction = "" }) {
@@ -192,19 +200,21 @@ export class StudioService extends EventEmitter {
     const thread = await this.#appServer.startThread({ cwd: this.#workspaceRoot });
     this.#attachThread(runId, thread);
     await this.#store.saveThreadId(runId, thread.id);
-    const plan = validateFinishOnlyPlan(await thread.run(createFinishOnlyPlanTurnParams({
-      threadId: thread.id,
-      sourcePath: await this.#store.getImagePath(runId),
-      direction: normalizedDirection,
-      skillPath: this.#brandGradeSkillPath,
-    })), { hasBrandDirection: normalizedDirection !== "" });
-    const result = {
-      ...plan,
-      sourceVersionId: run.sourceVersionId,
-      platformPrompt: compileFinishOnlyPrompt({ plan, direction: normalizedDirection }),
-    };
-    await this.#store.saveFinishOnlyPlan(runId, result);
-    return result;
+    return this.#runAndArchive(runId, thread, async () => {
+      const plan = validateFinishOnlyPlan(await thread.run(createFinishOnlyPlanTurnParams({
+        threadId: thread.id,
+        sourcePath: await this.#store.getImagePath(runId),
+        direction: normalizedDirection,
+        skillPath: this.#brandGradeSkillPath,
+      })), { hasBrandDirection: normalizedDirection !== "" });
+      const result = {
+        ...plan,
+        sourceVersionId: run.sourceVersionId,
+        platformPrompt: compileFinishOnlyPrompt({ plan, direction: normalizedDirection }),
+      };
+      await this.#store.saveFinishOnlyPlan(runId, result);
+      return result;
+    });
   }
 
   async createBrandGradeRepairContract({ runId, findingId }) {
@@ -226,19 +236,21 @@ export class StudioService extends EventEmitter {
     const audit = await this.#store.loadLatestAudit(runId);
     const contract = await this.#store.loadLatestContract(runId);
     const thread = await this.#getOrResumeThread(runId);
-    const raw = await thread.run(createBrandGradeComparisonTurnParams({
-      threadId: thread.id,
-      sourcePath: await this.#store.getImagePath(runId),
-      candidatePath: await this.#store.getStoredPath(runId, candidate.filename),
-      audit,
-      contract,
-      skillPath: this.#brandGradeSkillPath,
-    }));
-    raw.sourceVersionId = run.sourceVersionId;
-    raw.candidateVersionId = candidateId;
-    const comparison = validateBrandGradeComparison(raw);
-    await this.#store.saveComparison(runId, candidateId, comparison);
-    return comparison;
+    return this.#runAndArchive(runId, thread, async () => {
+      const raw = await thread.run(createBrandGradeComparisonTurnParams({
+        threadId: thread.id,
+        sourcePath: await this.#store.getImagePath(runId),
+        candidatePath: await this.#store.getStoredPath(runId, candidate.filename),
+        audit,
+        contract,
+        skillPath: this.#brandGradeSkillPath,
+      }));
+      raw.sourceVersionId = run.sourceVersionId;
+      raw.candidateVersionId = candidateId;
+      const comparison = validateBrandGradeComparison(raw);
+      await this.#store.saveComparison(runId, candidateId, comparison);
+      return comparison;
+    });
   }
 
   async approveBrandGradeCandidate({ runId, candidateId }) {
@@ -264,12 +276,70 @@ export class StudioService extends EventEmitter {
     this.#sessions.set(runId, { thread, eventHandler });
   }
 
+  #detachThread(runId, thread) {
+    const session = this.#sessions.get(runId);
+    if (!session || session.thread !== thread) return;
+    session.thread.off("event", session.eventHandler);
+    session.thread.close();
+    this.#sessions.delete(runId);
+  }
+
+  async #runAndArchive(runId, thread, operation) {
+    try {
+      return await operation();
+    } finally {
+      await this.#archiveThread(runId, thread);
+    }
+  }
+
+  async #archiveThread(runId, thread) {
+    this.#detachThread(runId, thread);
+    if (typeof this.#appServer.archiveThread !== "function") return;
+    try {
+      await this.#appServer.archiveThread(thread.id);
+      await this.#store.setThreadArchived(runId, true);
+    } catch (error) {
+      this.emit("cleanup-warning", { runId, threadId: thread.id, error });
+    }
+  }
+
   async #getOrResumeThread(runId) {
     let thread = this.#sessions.get(runId)?.thread;
     if (thread) return thread;
-    const threadId = await this.#store.getThreadId(runId);
+    const state = typeof this.#store.getThreadState === "function"
+      ? await this.#store.getThreadState(runId)
+      : { threadId: await this.#store.getThreadId(runId), archived: false };
+    const { threadId } = state;
     if (!threadId) throw new Error("This run has no Codex thread. Analyze it first.");
-    thread = await this.#appServer.resumeThread(threadId);
+    if (state.archived && typeof this.#appServer.unarchiveThread === "function") {
+      try {
+        await this.#appServer.unarchiveThread(threadId);
+        await this.#store.setThreadArchived(runId, false);
+      } catch (unarchiveError) {
+        try {
+          thread = await this.#appServer.resumeThread(threadId);
+          await this.#store.setThreadArchived(runId, false);
+          this.#attachThread(runId, thread);
+          return thread;
+        } catch {
+          throw unarchiveError;
+        }
+      }
+    }
+    try {
+      thread = await this.#appServer.resumeThread(threadId);
+    } catch (resumeError) {
+      if (state.archived || typeof this.#appServer.unarchiveThread !== "function") {
+        throw resumeError;
+      }
+      try {
+        await this.#appServer.unarchiveThread(threadId);
+        await this.#store.setThreadArchived(runId, false);
+        thread = await this.#appServer.resumeThread(threadId);
+      } catch {
+        throw resumeError;
+      }
+    }
     this.#attachThread(runId, thread);
     return thread;
   }
