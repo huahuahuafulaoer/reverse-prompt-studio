@@ -309,6 +309,15 @@ rl.on("line", (line) => {
         if (!field) continue;
         const percentage = instruction.match(/\d+(?:\.\d+)?%/)?.[0];
         field.value = percentage ?? instruction;
+        if (
+          sectionId === "A"
+          && revisionContract.authorized_anchor_keys?.includes("action")
+        ) {
+          recipe.contentAnchors.action.value = instruction;
+          if (revisionContract.authorized_anchor_keys.includes("interaction")) {
+            recipe.contentAnchors.interaction.value = `${instruction}，并与场景保持可信接触`;
+          }
+        }
       }
     }
     if (productMatched) {

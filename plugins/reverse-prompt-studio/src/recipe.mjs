@@ -4,6 +4,22 @@ function clone(value) {
 
 const anchorNames = ["subject", "action", "interaction", "scene"];
 
+const revisionDependencyRules = {
+  M: { sections: ["C", "Q", "X"], anchors: [] },
+  S: { sections: ["A", "C", "Q", "X"], anchors: ["subject", "interaction"] },
+  A: { sections: ["S", "K", "R", "Q", "X"], anchors: ["action", "interaction"] },
+  P: { sections: ["S", "A", "C", "Q", "X"], anchors: ["interaction"] },
+  C: { sections: ["M", "S", "Q", "X"], anchors: [] },
+  K: { sections: ["C", "P", "Q", "X"], anchors: [] },
+  L: { sections: ["G", "R", "Q", "X"], anchors: [] },
+  G: { sections: ["L", "R", "Q", "X"], anchors: [] },
+  E: { sections: ["C", "K", "L", "G", "R", "Q", "X"], anchors: ["scene", "interaction"] },
+  R: { sections: ["L", "G", "Q", "X"], anchors: [] },
+  T: { sections: ["M", "C", "Q", "X"], anchors: [] },
+  Q: { sections: ["X"], anchors: [] },
+  X: { sections: ["Q"], anchors: [] },
+};
+
 function emptyAnchor() {
   return { value: "", preserve: false, sourceRole: "not_applicable" };
 }
@@ -81,6 +97,32 @@ export function collectAuthorizedSectionIds(recipe, sectionInstructions = []) {
     .map((section) => section.id);
 }
 
+export function createRevisionAuthorization(recipe, primarySectionIds = []) {
+  const primary = new Set(primarySectionIds);
+  const dependencies = new Set();
+  const authorizedAnchors = new Set();
+  const presentSectionIds = new Set((recipe.sections ?? []).map((section) => section.id));
+
+  for (const sectionId of primary) {
+    const rule = revisionDependencyRules[sectionId];
+    for (const dependencyId of rule?.sections ?? []) {
+      if (presentSectionIds.has(dependencyId) && !primary.has(dependencyId)) {
+        dependencies.add(dependencyId);
+      }
+    }
+    for (const anchorName of rule?.anchors ?? []) authorizedAnchors.add(anchorName);
+  }
+
+  const sectionOrder = (recipe.sections ?? []).map((section) => section.id);
+  const primaryIds = sectionOrder.filter((sectionId) => primary.has(sectionId));
+  const dependencySectionIds = sectionOrder.filter((sectionId) => dependencies.has(sectionId));
+  const authorizedSectionIds = sectionOrder.filter(
+    (sectionId) => primary.has(sectionId) || dependencies.has(sectionId),
+  );
+  const authorizedAnchorKeys = anchorNames.filter((name) => authorizedAnchors.has(name));
+  return { primarySectionIds: primaryIds, dependencySectionIds, authorizedSectionIds, authorizedAnchorKeys };
+}
+
 export function buildRevisionPrompt(recipe, sectionInstructions = []) {
   const normalizedInstructions = normalizeSectionInstructions(recipe, sectionInstructions);
   const changedFields = [];
@@ -92,20 +134,25 @@ export function buildRevisionPrompt(recipe, sectionInstructions = []) {
       if (field.locked) lockedFieldIds.push(field.id);
     }
   }
-  const authorizedSectionIds = collectAuthorizedSectionIds(recipe, normalizedInstructions);
+  const primarySectionIds = collectAuthorizedSectionIds(recipe, normalizedInstructions);
+  const authorization = createRevisionAuthorization(recipe, primarySectionIds);
 
   const currentRecipe = clone(recipe);
   delete currentRecipe.editorChanges;
 
   return [
     "使用 $reverse-engineering-image-prompts 更新这份视觉配方。",
-    "按各板块职责把 section_instructions 中的自然语言要求转换为该板块内部字段，并同时应用 changed_fields。",
-    "只允许修改 authorized_section_ids；未授权板块必须与 current_recipe 逐字段完全一致，字段 ID 保持稳定。",
-    "严格保留 locked_field_ids。检查必要联动；若联动涉及未授权或锁定板块，不得静默修改，保留原值并把冲突写入现有 truthGaps。",
+    "按各板块职责把 section_instructions 中的自然语言要求转换为 primary_section_ids 内部字段，并同时应用 changed_fields。",
+    "只允许修改 authorized_section_ids；dependency_section_ids 只做实现用户意图所必需的最小联动，未授权板块必须与 current_recipe 逐字段完全一致，字段 ID 保持稳定。",
+    "同步 authorized_anchor_keys 对应的内容锚点，并同步相关保留、转译和排除约束，删除与用户新要求冲突的旧语义。不得修改未授权锚点；user_or_project_truth 永远不得被联动覆盖。",
+    "严格保留 locked_field_ids。若必要联动涉及锁定字段，不得静默修改，保留原值并把冲突写入现有 truthGaps。",
     "返回完整且唯一的 reverse-image-prompt/editor-v1 结构化状态，不要附加 prose prompt。",
     JSON.stringify({
       section_instructions: normalizedInstructions,
-      authorized_section_ids: authorizedSectionIds,
+      primary_section_ids: authorization.primarySectionIds,
+      dependency_section_ids: authorization.dependencySectionIds,
+      authorized_section_ids: authorization.authorizedSectionIds,
+      authorized_anchor_keys: authorization.authorizedAnchorKeys,
       changed_fields: changedFields,
       changed_paths: Object.keys(recipe.editorChanges ?? {}),
       locked_field_ids: lockedFieldIds,
@@ -117,12 +164,18 @@ export function buildRevisionPrompt(recipe, sectionInstructions = []) {
 export function restoreRevisionRecipeSections(
   nextRecipe,
   currentRecipe,
-  { authorizedSectionIds = [] } = {},
+  { authorizedSectionIds = [], authorizedAnchorKeys = [] } = {},
 ) {
   const next = clone(nextRecipe);
   if (!currentRecipe) return next;
   next.transferMode = currentRecipe.transferMode;
+  const generatedAnchors = clone(next.contentAnchors ?? {});
   next.contentAnchors = clone(currentRecipe.contentAnchors);
+  for (const anchorName of authorizedAnchorKeys) {
+    if (!anchorNames.includes(anchorName) || !generatedAnchors[anchorName]) continue;
+    if (currentRecipe.contentAnchors?.[anchorName]?.sourceRole === "user_or_project_truth") continue;
+    next.contentAnchors[anchorName] = generatedAnchors[anchorName];
+  }
 
   const authorized = new Set(authorizedSectionIds);
   const generatedSections = new Map(

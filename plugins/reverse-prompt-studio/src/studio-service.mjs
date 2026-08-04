@@ -21,6 +21,7 @@ import {
   buildRevisionPrompt,
   collectAuthorizedSectionIds,
   compilePortablePrompt,
+  createRevisionAuthorization,
   normalizeRecipe,
   normalizeSectionInstructions,
   restoreLockedRecipeSections,
@@ -89,6 +90,10 @@ export class StudioService extends EventEmitter {
       normalizedCurrentRecipe,
       normalizedInstructions,
     );
+    const revisionAuthorization = createRevisionAuthorization(
+      normalizedCurrentRecipe,
+      authorizedSectionIds,
+    );
     const thread = await this.#getOrResumeThread(runId);
     return this.#runAndArchive(runId, thread, async () => {
       const generatedRecipe = normalizeRecipe(
@@ -109,7 +114,7 @@ export class StudioService extends EventEmitter {
         }),
       );
       const recipe = restoreRevisionRecipeSections(generatedRecipe, normalizedCurrentRecipe, {
-        authorizedSectionIds,
+        ...revisionAuthorization,
       });
       validateTransferRecipe(recipe, {
         expectedMode: normalizedCurrentRecipe.transferMode,

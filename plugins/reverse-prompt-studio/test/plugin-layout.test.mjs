@@ -22,7 +22,7 @@ test("the marketplace points to a self-contained Reverse Prompt Studio plugin", 
   );
 
   assert.equal(manifest.name, "reverse-prompt-studio");
-  assert.equal(manifest.version, "0.4.0");
+  assert.equal(manifest.version, "0.5.0");
   assert.equal(packageMetadata.version, manifest.version);
   assert.equal(manifest.repository, "https://github.com/huahuahuafulaoer/reverse-prompt-studio");
   assert.equal(manifest.skills, "./skills/");
@@ -64,7 +64,27 @@ test("bundles the brand grade finishing skill", async () => {
   );
 });
 
-test("declares the brand-grade 0.4 release across runtime metadata", async () => {
+test("bundled reverse-prompt contracts synchronize explicit section revisions", async () => {
+  const skill = await readFile(
+    path.join(pluginRoot, "skills/reverse-engineering-image-prompts/SKILL.md"),
+    "utf8",
+  );
+  const contract = await readFile(
+    path.join(
+      pluginRoot,
+      "skills/reverse-engineering-image-prompts/references/output-contract.md",
+    ),
+    "utf8",
+  );
+
+  for (const source of [skill, contract]) {
+    assert.match(source, /明确.*板块.*修改.*同步.*contentAnchors/s);
+    assert.match(source, /关联.*保留.*排除/s);
+    assert.doesNotMatch(source, /revisions and product matching retain this contract unchanged/i);
+  }
+});
+
+test("declares the 0.5 release across runtime metadata", async () => {
   const packageMetadata = JSON.parse(
     await readFile(path.join(pluginRoot, "package.json"), "utf8"),
   );
@@ -77,10 +97,10 @@ test("declares the brand-grade 0.4 release across runtime metadata", async () =>
   const readme = await readFile(path.join(pluginRoot, "README.md"), "utf8");
   const codexClient = await readFile(path.join(pluginRoot, "src/codex-client.mjs"), "utf8");
 
-  assert.equal(packageMetadata.version, "0.4.0");
-  assert.equal(manifest.version, "0.4.0");
-  assert.equal(marketplacePackage.version, "0.4.0");
-  assert.match(codexClient, /version: "0\.4\.0"/);
+  assert.equal(packageMetadata.version, "0.5.0");
+  assert.equal(manifest.version, "0.5.0");
+  assert.equal(marketplacePackage.version, "0.5.0");
+  assert.match(codexClient, /version: "0\.5\.0"/);
   for (const source of [
     "src/brand-grade-schema.mjs",
     "src/brand-grade-prompts.mjs",
@@ -94,4 +114,6 @@ test("declares the brand-grade 0.4 release across runtime metadata", async () =>
   assert.match(readme, /人物、产品、构图和场景内容保持不变/);
   assert.doesNotMatch(readme, /最早失败层|单问题 contract|四层全部 PASS/);
   assert.match(readme, /不包含工具内直接出修复图/);
+  assert.match(readme, /动作.*同步|同步.*动作/s);
+  assert.match(readme, /自动归档/);
 });

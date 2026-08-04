@@ -106,6 +106,21 @@ test("HTTP app uploads an image, analyzes it, and revises the same run", async (
     }).then((response) => response.json());
     assert.equal(revised.recipe.title, "Fake revised result");
 
+    const actionRevised = await fetch(`${origin}/api/revise`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        runId: upload.runId,
+        recipe: revised.recipe,
+        sectionInstructions: [
+          { sectionId: "A", instruction: "沿岩脊稳定徒步上行" },
+        ],
+      }),
+    }).then((response) => response.json());
+    assert.equal(actionRevised.recipe.contentAnchors.action.value, "沿岩脊稳定徒步上行");
+    assert.match(actionRevised.compiledPrompt, /动作：沿岩脊稳定徒步上行/);
+    assert.doesNotMatch(actionRevised.compiledPrompt, /内容锚点[^\n]*动作：测试动作/);
+
     const malformedInstructions = await fetch(`${origin}/api/revise`, {
       method: "POST",
       headers: { "content-type": "application/json" },

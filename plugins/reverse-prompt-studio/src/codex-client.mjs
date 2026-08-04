@@ -30,7 +30,7 @@ export class CodexAppServer extends EventEmitter {
       clientInfo: {
         name: "reverse_prompt_studio",
         title: "Reverse Prompt Studio",
-        version: "0.4.0",
+        version: "0.5.0",
       },
     });
     connection.notify("initialized", {});

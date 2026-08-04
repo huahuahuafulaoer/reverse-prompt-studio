@@ -141,6 +141,112 @@ test("revision prompt authorizes instruction and dirty-field sections with a sta
   assert.match(prompt, /current_recipe/);
 });
 
+test("action instructions authorize only the linked state needed for semantic consistency", () => {
+  const recipe = normalizeRecipe({
+    ...sampleRecipe,
+    transferMode: "content_fidelity",
+    contentAnchors: {
+      subject: { value: "远足者", preserve: true, sourceRole: "content_reference" },
+      action: { value: "静止站立眺望", preserve: true, sourceRole: "content_reference" },
+      interaction: { value: "双脚站定在岩脊", preserve: true, sourceRole: "content_reference" },
+      scene: { value: "高山峡谷", preserve: true, sourceRole: "content_reference" },
+    },
+    sections: [
+      { id: "S", label: "主体", fields: [{ id: "S01", label: "朝向", value: "面向山谷" }] },
+      { id: "A", label: "动作", fields: [{ id: "A01", label: "核心动作", value: "静止站立眺望" }] },
+      { id: "K", label: "镜头", fields: [{ id: "K01", label: "动态", value: "完全静止" }] },
+      { id: "E", label: "环境", fields: [{ id: "E01", label: "场景", value: "高山峡谷" }] },
+      { id: "R", label: "成像", fields: [{ id: "R01", label: "动作表现", value: "静态轮廓" }] },
+      { id: "Q", label: "迁移边界", fields: [{ id: "Q01", label: "保留", value: "静止眺望" }] },
+      { id: "X", label: "失败约束", fields: [{ id: "X01", label: "错误动作", value: "不得行走" }] },
+    ],
+  });
+
+  const prompt = buildRevisionPrompt(recipe, [
+    { sectionId: "A", instruction: "正在徒步登顶，稳定坚韧地持续上行" },
+  ]);
+
+  assert.match(prompt, /"primary_section_ids":\["A"\]/);
+  assert.match(prompt, /"dependency_section_ids":\["S","K","R","Q","X"\]/);
+  assert.match(prompt, /"authorized_section_ids":\["S","A","K","R","Q","X"\]/);
+  assert.match(prompt, /"authorized_anchor_keys":\["action","interaction"\]/);
+  assert.match(prompt, /同步.*内容锚点.*保留.*排除/);
+});
+
+test("action revision restoration keeps linked updates and removes the old action contradiction", () => {
+  const current = normalizeRecipe({
+    schema: "reverse-image-prompt/editor-v1",
+    title: "高山远足者",
+    transferMode: "content_fidelity",
+    contentAnchors: {
+      subject: { value: "一名远足者", preserve: true, sourceRole: "content_reference" },
+      action: { value: "静止站立眺望", preserve: true, sourceRole: "content_reference" },
+      interaction: { value: "双脚站定在岩脊", preserve: true, sourceRole: "content_reference" },
+      scene: { value: "高山峡谷", preserve: true, sourceRole: "content_reference" },
+    },
+    sections: [
+      { id: "S", label: "主体", fields: [{ id: "S01", label: "朝向", value: "面向山谷" }] },
+      { id: "A", label: "动作", fields: [{ id: "A01", label: "核心动作", value: "静止站立眺望" }] },
+      { id: "K", label: "镜头", fields: [{ id: "K01", label: "动态", value: "完全静止" }] },
+      { id: "E", label: "环境", fields: [{ id: "E01", label: "场景", value: "高山峡谷" }] },
+      { id: "R", label: "成像", fields: [{ id: "R01", label: "动作表现", value: "静态轮廓" }] },
+      { id: "Q", label: "迁移边界", fields: [{ id: "Q01", label: "保留", value: "保持静止眺望" }] },
+      { id: "X", label: "失败约束", fields: [{ id: "X01", label: "错误动作", value: "不得行走" }] },
+    ],
+    referenceTransfer: {
+      preserve: ["主动作：静止站立眺望"],
+      translate: ["维持静止关系"],
+      omit: ["品牌标志"],
+    },
+    truthGaps: [],
+    negativeConstraints: ["保持静止站立并眺望山谷"],
+  });
+  const generated = normalizeRecipe({
+    ...current,
+    contentAnchors: {
+      subject: { value: "模型擅改主体", preserve: true, sourceRole: "content_reference" },
+      action: { value: "沿岩脊稳定徒步上行", preserve: true, sourceRole: "content_reference" },
+      interaction: { value: "前后脚交替踩踏岩面并持续推进", preserve: true, sourceRole: "content_reference" },
+      scene: { value: "模型擅改场景", preserve: true, sourceRole: "content_reference" },
+    },
+    sections: current.sections.map((section) => {
+      const values = {
+        S: "背向镜头朝峰顶方向",
+        A: "沿岩脊稳定徒步上行",
+        K: "用步态和衣物变化表现运动",
+        E: "模型擅改环境",
+        R: "保持人物清晰并呈现自然步态",
+        Q: "保留持续登顶动作",
+        X: "避免静止摆拍或站立观景",
+      };
+      return {
+        ...section,
+        fields: section.fields.map((field) => ({ ...field, value: values[section.id] })),
+      };
+    }),
+    referenceTransfer: {
+      preserve: ["主动作：持续徒步登顶"],
+      translate: ["维持稳定上行关系"],
+      omit: ["品牌标志"],
+    },
+    negativeConstraints: ["避免静止摆拍或站立观景"],
+  });
+
+  const restored = restoreRevisionRecipeSections(generated, current, {
+    authorizedSectionIds: ["S", "A", "K", "R", "Q", "X"],
+    authorizedAnchorKeys: ["action", "interaction"],
+  });
+  const prompt = compilePortablePrompt(restored);
+
+  assert.equal(restored.contentAnchors.subject.value, "一名远足者");
+  assert.equal(restored.contentAnchors.scene.value, "高山峡谷");
+  assert.equal(restored.contentAnchors.action.value, "沿岩脊稳定徒步上行");
+  assert.equal(restored.sections.find((section) => section.id === "E").fields[0].value, "高山峡谷");
+  assert.match(prompt, /沿岩脊稳定徒步上行/);
+  assert.match(prompt, /持续徒步登顶/);
+  assert.doesNotMatch(prompt, /静止站立眺望|保持静止关系|不得行走/);
+});
+
 test("revision restoration precisely preserves unauthorized sections without turning them into locks", () => {
   const current = normalizeRecipe({
     ...sampleRecipe,

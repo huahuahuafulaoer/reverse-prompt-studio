@@ -111,7 +111,9 @@ Keep field IDs stable during an editing session. Do not renumber unaffected fiel
 
 The structured state is the only source of truth. Do not maintain a separate prose prompt that can drift from it.
 
-For the Reverse Prompt Studio editor transport, always include `transferMode` and all four fixed `contentAnchors` at the recipe top level. Preserve them unchanged in revisions and product matching unless the user explicitly starts a new analysis with a different mode.
+For the Reverse Prompt Studio editor transport, always include `transferMode` and all four fixed `contentAnchors` at the recipe top level. Preserve `transferMode`. Preserve anchors during ordinary revisions and product matching, except when the user clearly asks to modify the owning subject, action, interaction, or environment section. For such an explicit section change, synchronize the authorized `contentAnchors` keys plus the related preserve, translate, and exclusion language so the final recipe contains no old semantic command that contradicts the user's new intent. Never overwrite an anchor whose `sourceRole` is `user_or_project_truth` through dependency synchronization.
+
+明确的板块修改必须同步对应的 `contentAnchors`，并同步关联的保留、转译和排除内容。
 
 ### 7. Present, edit, or execute
 
@@ -124,7 +126,7 @@ Follow the mode contract in [output-contract.md](references/output-contract.md):
 
 Accept edits by field ID, JSON path, or natural language. Map all three to the same structured state. For a small edit, return a change receipt and only the affected control-card sections unless the user asks to see the full card.
 
-Respect locks. Preserve every unspecified field by default. Before applying a change, check dependencies among subject, action, product, composition, camera, light, and material. If a locked field must change for physical plausibility, stop and request confirmation instead of silently rewriting it.
+Respect locks. Preserve every unspecified field by default. Before applying a change, check dependencies among subject, action, product, composition, camera, light, and material. When the user clearly modifies a section, apply only the minimum unlocked linked-field changes needed for consistency and synchronize related `contentAnchors`, preserve/translate language, and exclusions. If a locked field must change for physical plausibility, keep it unchanged and record the conflict instead of silently rewriting it.
 
 When a provider is known, adapt syntax and reference handling without changing the structured source of truth. Avoid prestige filler such as `masterpiece`, `award-winning`, `8K`, camera brands, or “Apple-style” unless the user requests it or it expresses necessary visible behavior. Keep constraints short and failure-specific.
 

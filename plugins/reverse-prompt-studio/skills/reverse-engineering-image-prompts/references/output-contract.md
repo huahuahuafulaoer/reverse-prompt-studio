@@ -18,7 +18,9 @@ The editor transport `reverse-image-prompt/editor-v1` always includes these fixe
 }
 ```
 
-Allowed modes are `content_fidelity`, `style_composition`, and `subject_swap`. For content fidelity, every anchor value and the `S`/`A` sections are non-empty, and preserved subject/action semantics stay positive rather than appearing in `omit` or negative constraints. Add two semantic-drift negatives: same-scene activities with a different primary action, and similar-posture/equipment professions, tasks, or uses. For style composition, use empty values with `preserve=false` and `sourceRole=not_applicable`. For subject swap, `contentAnchors.subject.value` exactly matches the user's replacement, with `preserve=true` and `sourceRole=user_or_project_truth`. Revisions and product matching retain this contract unchanged.
+Allowed modes are `content_fidelity`, `style_composition`, and `subject_swap`. For content fidelity, every anchor value and the `S`/`A` sections are non-empty, and preserved subject/action semantics stay positive rather than appearing in `omit` or negative constraints. Add two semantic-drift negatives: same-scene activities with a different primary action, and similar-posture/equipment professions, tasks, or uses. For style composition, use empty values with `preserve=false` and `sourceRole=not_applicable`. For subject swap, `contentAnchors.subject.value` exactly matches the user's replacement, with `preserve=true` and `sourceRole=user_or_project_truth`. Preserve this contract during product matching and ordinary revisions. When the user clearly requests a section modification, synchronize its authorized `contentAnchors` keys and all related preserve, translate, and exclusion language; do not leave the prior subject/action/interaction/scene semantics elsewhere in the recipe. Dependency synchronization never overwrites `user_or_project_truth`.
+
+明确的板块修改必须同步对应的 `contentAnchors`，并同步关联的保留、转译和排除内容。
 
 ## Mode selection
 
@@ -156,7 +158,7 @@ Check these common relationships:
 - light direction/size → shadow direction, specular shape, material readability;
 - material/transparent structure → highlights, refraction, background separation.
 
-If a required linked field is locked, return `dependency_conflict` and ask for confirmation. Never override a lock silently.
+When the user clearly requests a section modification, synchronize the minimum necessary unlocked linked fields, authorized `contentAnchors`, and related preserve/translate/exclusion constraints. If a required linked field is locked, return `dependency_conflict` and ask for confirmation. Never override a lock silently.
 
 ## JSON mode: semantic generation JSON
 
